@@ -5,7 +5,7 @@ members = ["levi-core", "levi", "levi-hub", "levi-dash"]
 default-members = ["levi-core", "levi", "levi-hub"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 
