@@ -2505,10 +2505,13 @@ dependencies = [
  "gix",
  "hostname",
  "levi-core",
+ "log",
  "myko",
+ "myko-server",
  "predicates",
  "serde_json",
  "tempfile",
+ "tokio",
  "toml",
  "uuid",
 ]

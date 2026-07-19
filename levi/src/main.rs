@@ -48,6 +48,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             commands::edit::run(&ctx, &id, priority, title, labels, body)
         }
         Cmd::Sync { no_git, no_hub } => commands::sync_cmd::run(&mut ctx, no_git, no_hub),
-        Cmd::Watch { .. } => anyhow::bail!("not implemented yet"),
+        Cmd::Watch { json } => commands::watch::run(&ctx, json),
     }
 }

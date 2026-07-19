@@ -4,5 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod ctx;
 pub mod output;
+pub mod facts;
+pub mod hub_client;
 pub mod store;
 pub mod sync;

@@ -9,3 +9,4 @@ pub mod next;
 pub mod show;
 pub mod status;
 pub mod sync_cmd;
+pub mod watch;

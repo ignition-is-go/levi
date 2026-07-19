@@ -20,6 +20,11 @@ clap = { version = "4", features = ["derive"] }
 hostname = "0.4"
 fs4 = "0.13"
 toml = "0.8"
+log = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies.myko-server]
+workspace = true
 
 [dev-dependencies]
 assert_cmd = "2"
