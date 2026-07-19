@@ -3,6 +3,7 @@ name = "levi-core"
 version = "0.1.2"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Entities, status resolution, and ranking for levi, the git-aware issue tracker"
 
 [package.metadata.flux]

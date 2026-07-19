@@ -7,6 +7,7 @@ default-members = ["levi-core", "levi", "levi-hub"]
 [workspace.package]
 edition = "2024"
 license = "AGPL-3.0-or-later"
+repository = "https://github.com/ignition-is-go/levi"
 
 [workspace.dependencies]
 myko = "4.24"
