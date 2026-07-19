@@ -16,8 +16,6 @@ cargo build --release            # levi + levi-hub (native)
 cd levi-dash && trunk build      # dashboard (wasm; needs trunk + wasm32 target)
 ```
 
-Depends on a local checkout of the myko framework at `../myko`.
-
 ## Quickstart
 
 ```sh

@@ -1,8 +1,8 @@
 # levi
 
-Git-aware, agent-first, distributed issue tracker. Rust, built on the myko
-framework (local checkout: `~/Code/myko`; idiomatic consumer example:
-`~/Code/rship/apps/asset_store`).
+Git-aware, agent-first, distributed issue tracker. Rust, built on the
+[myko](https://github.com/ignition-is-go/myko) framework (crates.io:
+`myko`, `myko-server`, `myko-leptos`).
 
 ## Status
 
