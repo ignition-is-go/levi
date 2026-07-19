@@ -100,3 +100,9 @@ commit facts alone.
 tests over synthetic DAGs), CLI integration against scripted multi-branch /
 merge / rebase / worktree repos, concurrent CAS appends and parallel claims,
 and two-repo + in-process-hub sync convergence.
+
+## License
+
+AGPL-3.0-or-later, matching the [myko] framework it builds on.
+
+[myko]: https://github.com/ignition-is-go/myko

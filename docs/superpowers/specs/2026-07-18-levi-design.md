@@ -228,8 +228,8 @@ V1 pages:
 
 ## Licensing note
 
-Deferred — the author owns myko and levi and will pick licenses later.
-Not a design constraint.
+Resolved post-implementation: AGPL-3.0-or-later across all levi crates,
+matching the myko framework they link.
 
 ## Testing
 
