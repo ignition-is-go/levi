@@ -158,3 +158,55 @@ fn worktrees_share_events_but_resolve_own_head() {
 
     repo.git(&["worktree", "remove", "--force", &wt.to_string_lossy()]);
 }
+
+#[test]
+fn elsewhere_closed_context_surfaces_in_ls_and_next() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fixed on a branch", &["-p", "p0"]);
+
+    // Close on a feature branch; main never sees the fixing commit.
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    let fix_sha = repo.commit("the fix");
+    repo.levi_ok(&["close", &id]);
+    repo.checkout("main");
+
+    // ls --json: open here, but closed_elsewhere names the anchor + branch.
+    let ls = repo.levi_json(&["ls", "--json"]);
+    let task = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"].as_str() == Some(id.as_str()))
+        .expect("open on main");
+    assert_eq!(task["status"], "open");
+    let elsewhere = task["closed_elsewhere"].as_array().unwrap();
+    assert_eq!(elsewhere.len(), 1);
+    assert_eq!(elsewhere[0]["anchor"].as_str().unwrap(), fix_sha);
+    let branches: Vec<_> = elsewhere[0]["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b.as_str().unwrap())
+        .collect();
+    assert!(branches.contains(&"feature"), "branches: {branches:?}");
+
+    // Human ls carries the hint; next's reason tells the agent to merge.
+    let human = repo.levi_ok(&["ls"]);
+    assert!(human.contains("fix exists on feature"), "got: {human}");
+    let next = repo.levi_json(&["next", "--json"]);
+    let reason = next["tasks"][0]["reason"].as_str().unwrap();
+    assert!(reason.contains("consider merging"), "reason: {reason}");
+
+    // Merge the fix: context disappears along with the task (closed now).
+    repo.merge("feature");
+    let ls = repo.levi_json(&["ls", "--json", "--all"]);
+    let task = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"].as_str() == Some(id.as_str()))
+        .unwrap();
+    assert_eq!(task["status"], "closed");
+    assert_eq!(task["closed_elsewhere"].as_array().unwrap().len(), 0);
+}

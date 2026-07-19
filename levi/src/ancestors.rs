@@ -122,3 +122,87 @@ pub fn orphaned_anchors(
     }
     orphaned
 }
+
+/// A close that exists in the log but doesn't apply on this checkout — the
+/// fix is real, it just lives on ancestry we don't have. Agents should merge
+/// or cherry-pick it rather than re-implement (lv-98bf).
+#[derive(Debug, Clone)]
+pub struct ElsewhereClose {
+    pub anchor: String,
+    pub at: String,
+    pub by: String,
+    /// Local branches whose tips contain the anchor.
+    pub branches: Vec<String>,
+}
+
+/// Local branch tips, collected once per invocation for containment checks.
+pub struct BranchTips {
+    tips: Vec<(String, ObjectId)>,
+}
+
+impl BranchTips {
+    pub fn new(repo: &gix::Repository) -> Self {
+        let mut tips = Vec::new();
+        if let Ok(platform) = repo.references()
+            && let Ok(iter) = platform.prefixed("refs/heads/")
+        {
+            for reference in iter.flatten() {
+                let name = reference
+                    .name()
+                    .as_bstr()
+                    .to_string()
+                    .trim_start_matches("refs/heads/")
+                    .to_string();
+                let mut reference = reference;
+                if let Ok(id) = reference.peel_to_id() {
+                    tips.push((name, id.detach()));
+                }
+            }
+        }
+        Self { tips }
+    }
+
+    fn containing(&self, repo: &gix::Repository, sha: &str) -> Vec<String> {
+        let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else {
+            return Vec::new();
+        };
+        self.tips
+            .iter()
+            .filter(|(_, tip)| {
+                *tip == anchor
+                    || repo
+                        .merge_base(*tip, anchor)
+                        .map(|b| b.detach() == anchor)
+                        .unwrap_or(false)
+            })
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+}
+
+/// Non-applying closes for one task: `to_status == Closed`, anchored, and the
+/// anchor is definitively *not* in this checkout's ancestry (unknown anchors
+/// are already surfaced as partial resolution, not here).
+pub fn elsewhere_closes(
+    repo: &gix::Repository,
+    changes: &[&levi_core::StatusChange],
+    anc: &mut GixAncestors,
+    tips: &BranchTips,
+) -> Vec<ElsewhereClose> {
+    changes
+        .iter()
+        .filter(|c| matches!(c.to_status, levi_core::StatusKind::Closed))
+        .filter_map(|c| {
+            let sha = c.anchor_commit.as_ref()?;
+            if anc.contains(sha) != Ancestry::No {
+                return None;
+            }
+            Some(ElsewhereClose {
+                anchor: sha.clone(),
+                at: c.created.clone(),
+                by: c.by_dev.clone(),
+                branches: tips.containing(repo, sha),
+            })
+        })
+        .collect()
+}

@@ -101,15 +101,34 @@ fn rank(ctx: &LeviCtx) -> Result<Vec<RankedTask>> {
 
 fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
     let now = Utc::now();
+    let mut anc = ctx.ancestors_for(None)?;
+    let tips = crate::ancestors::BranchTips::new(ctx.store.repo());
+    let elsewhere_of = |anc: &mut crate::ancestors::GixAncestors, task_id: &str| {
+        crate::ancestors::elsewhere_closes(
+            ctx.store.repo(),
+            &ctx.world.changes_for(task_id),
+            anc,
+            &tips,
+        )
+    };
+    // "Fix exists elsewhere" belongs in the reason an agent acts on: merging
+    // an existing fix beats re-implementing it (lv-98bf).
+    let full_reason = |r: &RankedTask, elsewhere: &[crate::ancestors::ElsewhereClose]| {
+        match crate::output::elsewhere_hint(elsewhere) {
+            Some(hint) => format!("{}; note: {hint} — consider merging it", r.reason),
+            None => r.reason.clone(),
+        }
+    };
+
     if json {
-        let mut anc = ctx.ancestors_for(None)?;
         let statuses = ctx.statuses(&mut anc, Resolution::Exact);
         let tasks: Vec<_> = ranked
             .iter()
             .map(|r| {
                 let task = &ctx.world.tasks[&r.task_id];
-                let mut v = task_json(&ctx.world, task, &statuses[&r.task_id], now);
-                v["reason"] = json!(r.reason);
+                let elsewhere = elsewhere_of(&mut anc, &r.task_id);
+                let mut v = task_json(&ctx.world, task, &statuses[&r.task_id], now, &elsewhere);
+                v["reason"] = json!(full_reason(r, &elsewhere));
                 v["unblocks"] = json!(r.unblocks);
                 v
             })
@@ -123,13 +142,14 @@ fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
     }
     for r in ranked {
         let task = &ctx.world.tasks[&r.task_id];
+        let elsewhere = elsewhere_of(&mut anc, &r.task_id);
         println!(
             "{} {} {}",
             short_id(&ctx.world, &r.task_id),
             task.priority.label(),
             task.title
         );
-        println!("  reason: {}", r.reason);
+        println!("  reason: {}", full_reason(r, &elsewhere));
     }
     Ok(())
 }

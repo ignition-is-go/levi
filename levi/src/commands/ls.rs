@@ -83,10 +83,27 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
 
     warn_orphaned_anchors(ctx, rows.iter().map(|t| &*t.id.0));
 
+    // Non-applying closes per open task: "the fix exists, just not here".
+    let tips = crate::ancestors::BranchTips::new(ctx.store.repo());
+    let mut elsewhere_of = |task_id: &str| -> Vec<crate::ancestors::ElsewhereClose> {
+        if statuses[task_id].status != Status::Open {
+            return Vec::new();
+        }
+        crate::ancestors::elsewhere_closes(
+            ctx.store.repo(),
+            &ctx.world.changes_for(task_id),
+            &mut anc,
+            &tips,
+        )
+    };
+
     if opts.json {
         let tasks: Vec<_> = rows
             .iter()
-            .map(|t| task_json(&ctx.world, t, &statuses[&*t.id.0], now))
+            .map(|t| {
+                let elsewhere = elsewhere_of(&t.id.0);
+                task_json(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere)
+            })
             .collect();
         println!(
             "{}",
@@ -101,7 +118,11 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
             eprintln!("no matching tasks");
         }
         for t in rows {
-            println!("{}", task_line(&ctx.world, t, &statuses[&*t.id.0], now));
+            let elsewhere = elsewhere_of(&t.id.0);
+            println!(
+                "{}",
+                task_line(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere)
+            );
         }
     }
     Ok(())
