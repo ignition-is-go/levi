@@ -80,10 +80,15 @@ cd levi-dash && trunk build       # dist/ — host the static files anywhere
 ```
 
 It connects to `ws://<page-hostname>:7377/myko` by default; override with
-`?hub=host:port`. Pages: overview (open/closed counts, P0 alerts, live
-activity feed), in-flight claims by dev → machine → worktree, and a project
-browser with a branch selector: any project's tasks as resolved against any
-branch, from commit facts alone.
+`?hub=host:port`. Built on [mullion] splittable panes (activity bar on each
+pane; split/drag/close like an IDE) and the [pulse-leptos-ui] design system.
+Views: overview (open/closed counts, P0 alerts, live activity feed),
+in-flight claims by dev → machine → worktree, and a project browser with a
+branch selector: any project's tasks as resolved against any branch, from
+commit facts alone.
+
+[mullion]: https://github.com/ignition-is-go/mullion
+[pulse-leptos-ui]: https://crates.io/crates/pulse-leptos-ui
 
 ## Testing
 
