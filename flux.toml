@@ -1,0 +1,32 @@
+[channels]
+main = "production"
+
+[tasks.check]
+workspace_batchable = true
+cargo = ["cargo", "check", "--target-dir", "target/claude"]
+
+[tasks.build]
+workspace_batchable = true
+cargo = ["cargo", "build"]
+
+[tasks.test]
+workspace_batchable = true
+cargo = ["cargo", "test"]
+
+[tasks.lint]
+cargo = ["cargo", "clippy", "--all-targets", "--", "-D", "warnings"]
+
+[tasks.check-wasm]
+# wasm32 coverage for the dashboard (levi-dash opts in via its
+# `[package.metadata.flux]` tasks list); `check` alone doesn't exercise
+# `#[cfg(target_arch = "wasm32")]` code paths.
+workspace_batchable = true
+cargo = ["cargo", "check", "--target", "wasm32-unknown-unknown", "--target-dir", "target/claude"]
+
+[tasks.publish]
+# The `levi` CLI and `levi-core` (its published dependency) list this task
+# in their `[package.metadata.flux]`; levi-hub/levi-dash are not published.
+cascade = "all"
+autoapply = "inherit"
+depends_on = ["build"]
+cargo = ["cargo", "publish"]

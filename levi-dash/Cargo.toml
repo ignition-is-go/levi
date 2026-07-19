@@ -3,6 +3,9 @@ name = "levi-dash"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.flux]
+tasks = ["check", "check-wasm", "lint"]
+
 [[bin]]
 name = "levi-dash"
 path = "src/main.rs"

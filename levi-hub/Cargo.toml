@@ -3,6 +3,9 @@ name = "levi-hub"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.flux]
+tasks = ["check", "build", "test", "lint"]
+
 [[bin]]
 name = "levi-hub"
 path = "src/main.rs"

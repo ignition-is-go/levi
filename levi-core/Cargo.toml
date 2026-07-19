@@ -2,6 +2,10 @@
 name = "levi-core"
 version.workspace = true
 edition.workspace = true
+description = "Entities, status resolution, and ranking for levi, the git-aware issue tracker"
+
+[package.metadata.flux]
+tasks = ["check", "build", "test", "lint", "publish"]
 
 [dependencies]
 myko = { workspace = true }

@@ -2,6 +2,10 @@
 name = "levi"
 version.workspace = true
 edition.workspace = true
+description = "Git-aware, agent-first, distributed issue tracker"
+
+[package.metadata.flux]
+tasks = ["check", "build", "test", "lint", "publish"]
 
 [[bin]]
 name = "levi"
