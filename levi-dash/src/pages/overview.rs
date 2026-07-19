@@ -1,7 +1,8 @@
 use leptos::prelude::*;
-use levi_core::resolve::Status;
+use levi_core::resolve::Status as TaskStatus;
 use levi_core::*;
 use myko_leptos::live_query;
+use pulse_leptos_ui::{Badge, BadgeVariant, EmptyState, Pane, tokens};
 
 use crate::resolve_client;
 
@@ -19,8 +20,12 @@ pub fn Overview() -> impl IntoView {
         let changes = changes.get();
         let commit_facts = commit_facts.get();
         let ref_facts = ref_facts.get();
+        let projects = projects.get();
+        if projects.is_empty() {
+            return view! { <EmptyState message="no projects synced yet".to_string() /> }
+                .into_any();
+        }
         projects
-            .get()
             .into_iter()
             .map(|project| {
                 let pid = project.id.to_string();
@@ -36,40 +41,59 @@ pub fn Overview() -> impl IntoView {
                     &pid,
                     head.as_deref(),
                 );
-                let open = statuses.values().filter(|s| s.status == Status::Open).count();
+                let open = statuses.values().filter(|s| s.status == TaskStatus::Open).count();
                 let closed = statuses.len() - open;
                 let p0: Vec<String> = tasks
                     .iter()
                     .filter(|t| {
                         t.project_id == pid
                             && t.priority == Priority::P0
-                            && statuses.get(&*t.id.0).map(|s| s.status == Status::Open).unwrap_or(false)
+                            && statuses
+                                .get(&*t.id.0)
+                                .map(|s| s.status == TaskStatus::Open)
+                                .unwrap_or(false)
                     })
                     .map(|t| t.title.clone())
                     .collect();
+                let head_badge = head
+                    .map(|h| format!("@ {}", &h[..8.min(h.len())]))
+                    .unwrap_or_else(|| "no branch facts".into());
                 view! {
-                    <div class="card">
-                        <h3>{project.name.clone()}</h3>
-                        <div class="row">
-                            <span class="num open">{open}</span><span class="muted">"open"</span>
-                            <span class="num closed">{closed}</span><span class="muted">"closed"</span>
-                            <span class="badge">{head.map(|h| format!("@ {}", &h[..8.min(h.len())])).unwrap_or_else(|| "no branch facts".into())}</span>
+                    <Pane title=project.name.clone()>
+                        <div style="display:flex;gap:16px;align-items:baseline;">
+                            <div>
+                                <div class="value" style=format!("color:{};", tokens::SUCCESS)>{open}</div>
+                                <div class="label">"open"</div>
+                            </div>
+                            <div>
+                                <div class="value text-muted">{closed}</div>
+                                <div class="label">"closed"</div>
+                            </div>
+                            <Badge variant=BadgeVariant::Neutral>{head_badge}</Badge>
                         </div>
                         {(!p0.is_empty()).then(|| view! {
-                            <div class="section">
-                                <h4 class="p0">"P0 open"</h4>
-                                {p0.into_iter().map(|t| view! { <div class="row p0">{t}</div> }).collect_view()}
+                            <div style="margin-top:10px;">
+                                <div class="label" style=format!("color:{};", tokens::ERROR)>"P0 open"</div>
+                                {p0.into_iter()
+                                    .map(|t| view! {
+                                        <div style=format!("color:{};", tokens::ERROR)>{t}</div>
+                                    })
+                                    .collect_view()}
                             </div>
                         })}
-                    </div>
+                    </Pane>
                 }
             })
             .collect_view()
+            .into_any()
     };
 
     let feed = move || {
         let mut entries = entries.get();
         entries.sort_by(|a, b| b.created.cmp(&a.created));
+        if entries.is_empty() {
+            return view! { <EmptyState message="no activity yet".to_string() /> }.into_any();
+        }
         entries
             .into_iter()
             .take(25)
@@ -88,20 +112,24 @@ pub fn Overview() -> impl IntoView {
                     })
                     .unwrap_or_else(|_| "undecodable event".into());
                 view! {
-                    <div class="row">
-                        <span class="muted">{entry.created.get(..19).unwrap_or("").to_string()}</span>
+                    <div style="display:flex;gap:10px;padding:3px 0;align-items:baseline;">
+                        <span class="text-muted" style="font-size:11px;white-space:nowrap;">
+                            {entry.created.get(..19).unwrap_or("").to_string()}
+                        </span>
                         <span>{line}</span>
                     </div>
                 }
             })
             .collect_view()
+            .into_any()
     };
 
     view! {
-        <div class="cards">{cards}</div>
-        <div class="feed">
-            <h4 class="muted">"activity"</h4>
-            {feed}
+        <div style="padding:12px;height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:12px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
+                {cards}
+            </div>
+            <Pane title="Activity".to_string()>{feed}</Pane>
         </div>
     }
 }
