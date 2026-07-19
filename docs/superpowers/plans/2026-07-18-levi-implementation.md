@@ -16,7 +16,6 @@
 - Status is never a field on Task; it is always derived per-checkout from StatusChange records.
 - Event log is append-only; events are immutable; union merge must always be conflict-free.
 - myko deps are **path deps** to the local checkout: `../myko/libs/myko/core` (`myko`), `../myko/libs/myko/server` (`myko-server`), `../myko/libs/myko/leptos` (`myko-leptos`). Version `4.24`. Edition 2024 everywhere.
-- The entities crate must expose `#[inline] pub fn link() {}` and every binary must call `levi_core::link()` early (inventory dead-strip guard).
 - Work happens on branch `levi-impl`; commit after every green task.
 
 ## Spec deviations (agreed rationale, encode as comments where relevant)
@@ -35,7 +34,7 @@
 ```
 Cargo.toml                      # workspace: levi-core, levi, levi-hub, levi-dash
 levi-core/
-  src/lib.rs                    # pub mod entities, materialize, resolve, rank, ids; pub fn link()
+  src/lib.rs                    # pub mod entities, materialize, resolve, rank, ids
   src/entities/mod.rs           # one file per entity, glob re-export
   src/entities/{project,task,status_change,dependency,claim,comment,commit_fact,ref_fact,log_entry}.rs
   src/ids.rs                    # short-id display + prefix matching
@@ -177,7 +176,6 @@ Remaining entities (each in its own file, same shape):
 ```rust
 pub mod entities; pub mod ids; pub mod materialize; pub mod resolve; pub mod rank;
 pub use entities::*;
-#[inline] pub fn link() {}
 ```
 
 (`ids`, `materialize`, `resolve`, `rank` start as empty modules; filled in Tasks 2–4.)
@@ -432,7 +430,7 @@ This is the heart of the spec — test it hard:
 **Files:** `levi-hub/Cargo.toml` (levi-core, myko, myko-server, tokio, axum 0.7, tokio-tungstenite 0.24, tower-http fs, clap, anyhow, log, env_logger), `levi-hub/src/{main,front_door,unwrap_saga}.rs`
 
 - `levi-hub serve --bind 0.0.0.0:7377 [--internal-port 7378] [--dash-dir DIR]`.
-- Internal: `CellServer::builder().with_bind_addr(127.0.0.1:internal).with_postgres(PostgresConfig::from_env()?)` — `MYKO_POSTGRES_URL` unset ⇒ in-memory with a logged warning (spec wants Postgres persistence; env-gated). Call `levi_core::link()` first.
+- Internal: `CellServer::builder().with_bind_addr(127.0.0.1:internal).with_postgres(PostgresConfig::from_env()?)` — `MYKO_POSTGRES_URL` unset ⇒ in-memory with a logged warning (spec wants Postgres persistence; env-gated).
 - `unwrap_saga.rs`: `#[myko_saga]` on LogEntry SETs → decode base64+CBOR to `MEvent` → `ctx.apply_event`, so Task/StatusChange/etc. are queryable hub-side. (If `myko_saga` proves awkward, equivalent fallback: a `watch`-style subscription on the LogEntry store inside `after_init`.) Idempotent: applying the same entry twice converges (SET overwrite).
 - Front door (axum on public bind): `GET /myko` with `Upgrade: websocket` → check token (`?token=` or `levi_token` cookie; token from `LEVI_HUB_TOKEN` env / `--token`; **no token configured ⇒ open hub, log warning**) → `tokio_tungstenite` connect to internal, bidirectional byte pipe. All other paths: static files from `--dash-dir` (404 JSON if unset). Wrong token ⇒ 401.
 
