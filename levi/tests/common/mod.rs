@@ -48,6 +48,14 @@ impl TestRepo {
         self.git(&["rev-parse", "HEAD"]).trim().to_string()
     }
 
+    /// Commit a real file change (patch-id matching needs non-empty diffs).
+    pub fn commit_file(&self, name: &str, content: &str, msg: &str) -> String {
+        std::fs::write(self.path().join(name), content).unwrap();
+        self.git(&["add", name]);
+        self.git(&["commit", "-q", "-m", msg]);
+        self.git(&["rev-parse", "HEAD"]).trim().to_string()
+    }
+
     pub fn branch(&self, name: &str) {
         self.git(&["branch", name]);
     }
@@ -68,8 +76,10 @@ impl TestRepo {
     pub fn levi_in(&self, cwd: PathBuf, args: &[&str]) -> assert_cmd::Command {
         let mut cmd = assert_cmd::Command::cargo_bin("levi").unwrap();
         cmd.current_dir(cwd).arg("--no-sync").args(args);
-        // Hermetic config: no user config file leakage.
+        // Hermetic config/state: no user file leakage (CI has no real
+        // sibling checkouts; tests fabricate their own).
         cmd.env("LEVI_CONFIG", self.path().join("levi-test-config.toml"));
+        cmd.env("LEVI_STATE_DIR", self.path().join("levi-test-state"));
         cmd
     }
 

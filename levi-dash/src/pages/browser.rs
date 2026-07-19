@@ -91,6 +91,11 @@ pub fn Browser() -> impl IntoView {
             &pid,
             head().as_deref(),
         );
+        let all_ids: Vec<String> = tasks_now
+            .iter()
+            .filter(|t| t.project_id == pid)
+            .map(|t| t.id.to_string())
+            .collect();
         let want_status = filter_status.get();
         let needle = filter_text.get().to_lowercase();
         let mut rows: Vec<_> = tasks_now
@@ -150,7 +155,7 @@ pub fn Browser() -> impl IntoView {
                         )
                     >
                         <span class="text-muted" style="font-family:var(--font-mono);font-size:11px;">
-                            {format!("lv-{}", &id[..4.min(id.len())])}
+                            {resolve_client::short_id(&all_ids, &id)}
                         </span>
                         <Badge variant=priority_variant>{priority.label()}</Badge>
                         <Status variant=status_variant>{status_label}</Status>
@@ -188,7 +193,22 @@ pub fn Browser() -> impl IntoView {
         let blocked_by: Vec<String> = deps_now
             .iter()
             .filter(|d| *d.blocked_task_id == task_id)
-            .map(|d| d.blocker_task_id[..8.min(d.blocker_task_id.len())].to_string())
+            .map(|d| {
+                let short = &d.blocker_task_id[..8.min(d.blocker_task_id.len())];
+                match &d.blocker_project_id {
+                    // Cross-project blocker: name the project and carry the
+                    // agent-authored consumption note.
+                    Some(project) => {
+                        let via = d
+                            .via
+                            .as_deref()
+                            .map(|v| format!(" (via: {v})"))
+                            .unwrap_or_default();
+                        format!("{}/{short}{via}", &project[..8.min(project.len())])
+                    }
+                    None => short.to_string(),
+                }
+            })
             .collect();
         let blocks: Vec<String> = deps_now
             .iter()

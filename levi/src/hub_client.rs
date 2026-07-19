@@ -114,11 +114,9 @@ impl HubSession {
         }
     }
 
-    /// This project's LogEntries as the hub currently knows them: the count
-    /// report is the "hub has answered" marker, then the ByQuery cell catches
-    /// up to it. (levi entity fields deliberately avoid the wire keys
-    /// `QueryRequest` flattens beside the query — `createdAt`/`tx` — which is
-    /// why entities use `created`, not `created_at`.)
+    /// This project's LogEntries as the hub currently knows them (used by
+    /// `levi watch` for its history snapshot; the sync hub leg uses the
+    /// Merkle bucket walk instead).
     pub fn log_entries(
         &self,
         project_id: &str,
@@ -146,6 +144,38 @@ impl HubSession {
         let _: levi_core::ProjectCount =
             self.report_once(levi_core::CountAllProjects {}, Duration::from_secs(10))?;
         Ok(())
+    }
+
+    /// Push events into a (possibly foreign) project with verification:
+    /// wrap as LogEntries (id = content address), send, and confirm the hub
+    /// holds every id before returning. Hub-ack-then-forget — the caller
+    /// stores nothing locally (spec: cross-project write path).
+    pub fn push_events_verified(&self, project_id: &str, events: &[MEvent]) -> Result<Vec<String>> {
+        let mut ids = Vec::with_capacity(events.len());
+        let mut wrapped = Vec::with_capacity(events.len());
+        for event in events {
+            let bytes = crate::store::EventStore::encode(event);
+            let oid = gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, &bytes)
+                .map_err(|e| anyhow::anyhow!("hashing event: {e}"))?
+                .to_string();
+            let entry = levi_core::LogEntry::wrap(&oid, project_id, &bytes, &event.created_at);
+            wrapped.push(MEvent::from_item(
+                &entry,
+                myko::wire::MEventType::SET,
+                "levi",
+            ));
+            ids.push(oid);
+        }
+        self.send_events(wrapped)?;
+        self.query_at_least(
+            levi_core::GetLogEntrysByIds {
+                ids: ids.iter().map(|i| i.as_str().into()).collect(),
+            },
+            ids.len(),
+            Duration::from_secs(10),
+        )
+        .map_err(|e| anyhow::anyhow!("hub did not acknowledge the write: {e}"))?;
+        Ok(ids)
     }
 
     pub fn close(self) {

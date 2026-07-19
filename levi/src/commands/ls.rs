@@ -16,12 +16,20 @@ pub fn warn_orphaned_anchors<'a>(ctx: &LeviCtx, task_ids: impl Iterator<Item = &
             }
         }
     }
-    for sha in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors) {
-        eprintln!(
-            "warning: anchor {} is unreachable from any ref — likely rebased away; \
-             affected tasks may show as open here. Re-run `levi close <id>` at the new HEAD.",
-            &sha[..8.min(sha.len())]
-        );
+    for orphan in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors) {
+        let sha = &orphan.sha[..8.min(orphan.sha.len())];
+        match &orphan.rewritten_as {
+            Some(new_sha) => eprintln!(
+                "warning: anchor {sha} was rewritten as {} (same patch-id); affected tasks \
+                 may show as open here. Re-close with `levi close <id> --anchor {}`.",
+                &new_sha[..8.min(new_sha.len())],
+                &new_sha[..8.min(new_sha.len())],
+            ),
+            None => eprintln!(
+                "warning: anchor {sha} is unreachable from any ref — likely rebased away; \
+                 affected tasks may show as open here. Re-run `levi close <id>` at the new HEAD.",
+            ),
+        }
     }
 }
 
@@ -69,11 +77,10 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
                 .map(|l| t.labels.contains(l))
                 .unwrap_or(true);
             let mine_ok = !opts.mine
-                || ctx.world.live_claim(id, now).is_some_and(|c| {
-                    c.dev == ctx.identity.dev
-                        && c.machine == ctx.identity.machine
-                        && c.worktree == ctx.identity.worktree
-                });
+                || ctx
+                    .world
+                    .live_claim(id, now)
+                    .is_some_and(|c| levi_core::rank::claim_is(c, &ctx.identity));
             status_ok && label_ok && mine_ok
         })
         .collect();
@@ -83,10 +90,27 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
 
     warn_orphaned_anchors(ctx, rows.iter().map(|t| &*t.id.0));
 
+    // Non-applying closes per open task: "the fix exists, just not here".
+    let tips = crate::ancestors::BranchTips::new(ctx.store.repo());
+    let mut elsewhere_of = |task_id: &str| -> Vec<crate::ancestors::ElsewhereClose> {
+        if statuses[task_id].status != Status::Open {
+            return Vec::new();
+        }
+        crate::ancestors::elsewhere_closes(
+            ctx.store.repo(),
+            &ctx.world.changes_for(task_id),
+            &mut anc,
+            &tips,
+        )
+    };
+
     if opts.json {
         let tasks: Vec<_> = rows
             .iter()
-            .map(|t| task_json(&ctx.world, t, &statuses[&*t.id.0], now))
+            .map(|t| {
+                let elsewhere = elsewhere_of(&t.id.0);
+                task_json(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere)
+            })
             .collect();
         println!(
             "{}",
@@ -101,7 +125,11 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
             eprintln!("no matching tasks");
         }
         for t in rows {
-            println!("{}", task_line(&ctx.world, t, &statuses[&*t.id.0], now));
+            let elsewhere = elsewhere_of(&t.id.0);
+            println!(
+                "{}",
+                task_line(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere)
+            );
         }
     }
     Ok(())

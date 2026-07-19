@@ -37,9 +37,12 @@ pub enum Cmd {
         #[arg(long = "file")]
         files: Vec<std::path::PathBuf>,
     },
-    /// Add a task.
+    /// Add a task (use --project to file it in another project via the hub).
     Add {
         title: String,
+        /// File into another project (name or id from the hub registry).
+        #[arg(long)]
+        project: Option<String>,
         /// Priority: p0..p3 (default p2).
         #[arg(short = 'p', long)]
         priority: Option<String>,
@@ -152,11 +155,16 @@ pub enum Cmd {
 
 #[derive(Subcommand)]
 pub enum DepCmd {
-    /// BLOCKED is blocked by --on BLOCKER.
+    /// BLOCKED is blocked by --on BLOCKER (same project, or
+    /// `project/lv-xxxx[@ref]` for a cross-project blocker).
     Add {
         blocked: String,
         #[arg(long = "on")]
         on: String,
+        /// How the dependency is consumed (cross-project only), e.g.
+        /// "cargo: crates.io myko ^4.24". Agents verify against this.
+        #[arg(long)]
+        via: Option<String>,
     },
     /// Remove a dependency.
     Rm {

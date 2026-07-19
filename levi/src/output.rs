@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use levi_core::Task;
+
+use crate::ancestors::ElsewhereClose;
 use levi_core::ids::short_id;
 use levi_core::materialize::World;
 use levi_core::resolve::ResolvedStatus;
@@ -23,7 +25,13 @@ pub fn claim_json(world: &World, task_id: &str, now: DateTime<Utc>) -> Value {
     }
 }
 
-pub fn task_json(world: &World, task: &Task, status: &ResolvedStatus, now: DateTime<Utc>) -> Value {
+pub fn task_json(
+    world: &World,
+    task: &Task,
+    status: &ResolvedStatus,
+    now: DateTime<Utc>,
+    elsewhere: &[ElsewhereClose],
+) -> Value {
     let id = task.id.to_string();
     json!({
         "id": id,
@@ -36,7 +44,31 @@ pub fn task_json(world: &World, task: &Task, status: &ResolvedStatus, now: DateT
         "created_at": task.created,
         "created_by": task.created_by_dev,
         "claim": claim_json(world, &id, now),
+        "closed_elsewhere": elsewhere
+            .iter()
+            .map(|e| json!({
+                "anchor": e.anchor,
+                "at": e.at,
+                "by": e.by,
+                "branches": e.branches,
+            }))
+            .collect::<Vec<_>>(),
     })
+}
+
+/// One-line human hint for a fix that exists on other ancestry.
+pub fn elsewhere_hint(elsewhere: &[ElsewhereClose]) -> Option<String> {
+    let first = elsewhere.first()?;
+    let place = if first.branches.is_empty() {
+        format!("@ {}", &first.anchor[..8.min(first.anchor.len())])
+    } else {
+        format!(
+            "on {} @ {}",
+            first.branches.join(", "),
+            &first.anchor[..8.min(first.anchor.len())]
+        )
+    };
+    Some(format!("fix exists {place}"))
 }
 
 pub fn task_line(
@@ -44,6 +76,7 @@ pub fn task_line(
     task: &Task,
     status: &ResolvedStatus,
     now: DateTime<Utc>,
+    elsewhere: &[ElsewhereClose],
 ) -> String {
     let id = task.id.to_string();
     let mut line = format!(
@@ -61,6 +94,9 @@ pub fn task_line(
     }
     if status.resolution == levi_core::resolve::Resolution::Partial {
         line.push_str("  ⚠ unknown anchor");
+    }
+    if let Some(hint) = elsewhere_hint(elsewhere) {
+        line.push_str(&format!("  ({hint} — consider merging)"));
     }
     line
 }

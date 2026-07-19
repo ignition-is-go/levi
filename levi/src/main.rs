@@ -19,12 +19,13 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Onboard { name, hub, files } => commands::onboard::run(&ctx, name, hub, files),
         Cmd::Add {
             title,
+            project,
             priority,
             body,
             labels,
             deps,
             json,
-        } => commands::add::run(&ctx, title, priority, body, labels, deps, json),
+        } => commands::add::run(&ctx, title, project, priority, body, labels, deps, json),
         Cmd::Ls {
             json,
             all,
@@ -79,7 +80,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Steal { id } => commands::claim_ops::steal(&ctx, &id),
         Cmd::Drop { id } => commands::claim_ops::drop(&ctx, &id),
         Cmd::Dep { cmd } => match cmd {
-            levi::cli::DepCmd::Add { blocked, on } => commands::dep::add(&ctx, &blocked, &on),
+            levi::cli::DepCmd::Add { blocked, on, via } => {
+                commands::dep::add(&ctx, &blocked, &on, via)
+            }
             levi::cli::DepCmd::Rm { blocked, on } => commands::dep::rm(&ctx, &blocked, &on),
         },
         Cmd::Comment { id, text } => commands::comment::run(&ctx, &id, &text),

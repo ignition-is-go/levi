@@ -187,6 +187,9 @@ mod tests {
             project_id: "p".into(),
             blocker_task_id: "a".into(),
             blocked_task_id: "b".into(),
+            blocker_project_id: None,
+            blocker_ref: None,
+            via: None,
         };
         let w = materialize(vec![
             rec("aa", &d, "2026-07-01T00:00:00Z"),
@@ -204,6 +207,7 @@ mod tests {
             dev: "d".into(),
             machine: "m".into(),
             worktree: "/w".into(),
+            machine_id: String::new(),
             created: "2026-07-01T00:00:00Z".into(),
             ttl_secs: 3600,
         };

@@ -3,6 +3,7 @@ pub mod entities;
 pub mod hub;
 pub mod ids;
 pub mod materialize;
+pub mod merkle;
 pub mod rank;
 pub mod resolve;
 
