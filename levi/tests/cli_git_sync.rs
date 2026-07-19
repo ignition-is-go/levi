@@ -171,3 +171,37 @@ fn rebased_away_anchor_warns() {
         .success()
         .stderr(predicate::str::contains("unreachable from any ref"));
 }
+
+#[test]
+fn mutations_sync_to_git_remote_in_background() {
+    // No hub, just a git remote: `levi add` (without --no-sync) must land the
+    // events ref on the remote by itself, via the detached background sync.
+    let repo = TestRepo::new();
+    let bare = repo.path().join("origin.git");
+    repo.git(&["init", "-q", "-b", "main", "--bare", bare.to_str().unwrap()]);
+    repo.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+    repo.init();
+
+    let mut cmd = assert_cmd::Command::cargo_bin("levi").unwrap();
+    cmd.current_dir(repo.path())
+        .env("LEVI_CONFIG", repo.path().join("levi-test-config.toml"))
+        .args(["add", "fire and forget"]);
+    cmd.assert().success();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let out = std::process::Command::new("git")
+            .args(["ls-remote", bare.to_str().unwrap(), "refs/levi/events"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        if !out.stdout.is_empty() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background sync never pushed the events ref"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}

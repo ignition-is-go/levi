@@ -1,19 +1,21 @@
-//! Sync legs (spec §Sync). The git leg lives in `commands::sync_cmd`; this
-//! module holds the hub leg (event-diff exchange) and drives the facts leg.
-//! `opportunistic` is the best-effort background sync every mutating command
-//! attempts on exit.
+//! Sync legs (spec §Sync): the git leg (fetch/union/push of the events
+//! ref), the hub leg (event-diff exchange), and the facts leg it drives.
+//! `opportunistic` is the detached background sync every mutating command
+//! fires on exit — issues reach the git remote and hub without anyone
+//! thinking about syncing.
 
 use std::collections::HashSet;
+use std::process::Command;
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use levi_core::LogEntry;
 use levi_core::materialize::materialize;
 use myko::wire::{MEvent, MEventType};
 
 use crate::ctx::LeviCtx;
 use crate::hub_client::HubSession;
-use crate::store::EventStore;
+use crate::store::{EVENTS_REF, EventStore};
 
 /// Hub leg: exchange event diffs with the configured hub, then publish
 /// commit-graph facts. `Ok(None)` when no hub is configured.
@@ -89,12 +91,108 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     )))
 }
 
-/// Best-effort, silent. No hub configured (or `--no-sync`) ⇒ no-op.
+/// Fetch the remote's events ref to a tracking ref, union-merge, push back.
+/// Transport is the `git` binary (spec deviation 7).
+pub fn git_leg(ctx: &LeviCtx) -> Result<String> {
+    let remote = &ctx.config.remote;
+    let repo_dir = ctx
+        .store
+        .repo()
+        .workdir()
+        .unwrap_or_else(|| ctx.store.repo().git_dir())
+        .to_path_buf();
+    // Confirm the remote exists before doing anything.
+    let has_remote = Command::new("git")
+        .args(["remote", "get-url", remote])
+        .current_dir(&repo_dir)
+        .output()
+        .context("running git")?;
+    if !has_remote.status.success() {
+        return Ok(format!("no remote '{remote}' configured; skipped"));
+    }
+
+    let tracking = format!("refs/levi/remotes/{remote}/events");
+    let fetch = Command::new("git")
+        .args(["fetch", "-q", remote, &format!("+{EVENTS_REF}:{tracking}")])
+        .current_dir(&repo_dir)
+        .output()?;
+    // A missing remote ref is fine (first push); other failures are not.
+    let fetched = fetch.status.success();
+
+    let new_events = if fetched {
+        ctx.store.merge_ref(&tracking)?
+    } else {
+        0
+    };
+
+    // Push with fetch-merge-retry: our union commit always fast-forwards the
+    // remote unless someone pushed meanwhile — then re-fetch, re-union, retry.
+    let mut pushed = false;
+    for _ in 0..3 {
+        let push = Command::new("git")
+            .args(["push", "-q", remote, &format!("{EVENTS_REF}:{EVENTS_REF}")])
+            .current_dir(&repo_dir)
+            .output()?;
+        if push.status.success() {
+            pushed = true;
+            break;
+        }
+        let refetch = Command::new("git")
+            .args(["fetch", "-q", remote, &format!("+{EVENTS_REF}:{tracking}")])
+            .current_dir(&repo_dir)
+            .output()?;
+        if !refetch.status.success() {
+            bail!(
+                "push to {remote} failed and re-fetch failed: {}",
+                String::from_utf8_lossy(&push.stderr).trim()
+            );
+        }
+        ctx.store.merge_ref(&tracking)?;
+    }
+    if !pushed {
+        bail!("could not push {EVENTS_REF} to {remote} after 3 attempts");
+    }
+    Ok(format!(
+        "{new_events} new event(s) fetched, pushed to {remote}"
+    ))
+}
+
+/// Best-effort background sync (spec §Sync: "opportunistic background sync
+/// on exit"): spawn a detached `levi sync` so the mutating command never
+/// waits on the network — an unreachable hub or slow remote costs nothing.
+/// No hub and no git remote ⇒ no-op. Failures are silent by design; `levi
+/// sync` reports loudly when run explicitly.
 pub fn opportunistic(ctx: &LeviCtx) {
-    if ctx.config.hub.is_none() {
+    let has_hub = ctx.config.hub.is_some();
+    let has_remote = Command::new("git")
+        .args(["remote", "get-url", &ctx.config.remote])
+        .current_dir(
+            ctx.store
+                .repo()
+                .workdir()
+                .unwrap_or_else(|| ctx.store.repo().git_dir()),
+        )
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !has_hub && !has_remote {
         return;
     }
-    if let Err(e) = hub_leg(ctx) {
-        log::debug!("opportunistic hub sync failed: {e:#}");
-    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let dir = ctx
+        .store
+        .repo()
+        .workdir()
+        .unwrap_or_else(|| ctx.store.repo().git_dir())
+        .to_path_buf();
+    let _ = Command::new(exe)
+        .arg("sync")
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    // Deliberately not waited on: the child outlives this process.
 }
