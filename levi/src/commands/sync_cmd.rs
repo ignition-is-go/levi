@@ -22,7 +22,7 @@ pub fn run(ctx: &mut LeviCtx, no_git: bool, no_hub: bool) -> Result<()> {
     if !no_hub {
         match crate::sync::hub_leg(ctx) {
             Ok(Some(summary)) => println!("hub: {summary}"),
-            Ok(None) => println!("hub: not configured (set `git config levi.hub`)"),
+            Ok(None) => println!("hub: not configured (run `levi onboard --hub <host:port>`)"),
             Err(e) => failures.push(format!("hub leg: {e:#}")),
         }
     }

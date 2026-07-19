@@ -109,6 +109,13 @@ pub fn run(
                 s.push_str(&current[end + END.len()..]);
                 s
             }
+            // Corrupted markers: never guess at what to keep — appending a
+            // fresh block would leave the stale partial one in place.
+            (Some(_), _) | (None, Some(_)) => anyhow::bail!(
+                "{} has a broken levi instruction block ({BEGIN} / {END} \
+                 mismatched); fix or remove the markers and re-run",
+                path.display()
+            ),
             _ if current.is_empty() => format!("{block}\n"),
             _ => {
                 let mut s = current.clone();

@@ -125,7 +125,9 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
     if !claim.is_null() {
         println!(
             "claimed by {} on {} ({})",
-            claim["dev"], claim["machine"], claim["worktree"]
+            claim["dev"].as_str().unwrap_or_default(),
+            claim["machine"].as_str().unwrap_or_default(),
+            claim["worktree"].as_str().unwrap_or_default()
         );
     }
     if !blocked_by.is_empty() {

@@ -35,6 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 async fn serve(bind: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     levi_core::link();
+    tracing::warn!(
+        "levi-hub has no authentication: anyone who can reach {bind} can read and \
+         write all task data. Bind a private interface or front with an \
+         authenticating proxy."
+    );
     let mut builder = myko_server::CellServer::builder().with_bind_addr(bind.parse()?);
     match myko_server::postgres::PostgresConfig::from_env() {
         Some(pg) => builder = builder.with_postgres(pg),

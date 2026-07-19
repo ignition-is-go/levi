@@ -130,3 +130,69 @@ async fn log_entry_saga_unwraps_into_queryable_task() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn out_of_order_events_do_not_clobber_newer_state() {
+    let hub = start_hub();
+    let client = MykoClient::new();
+    assert!(connect(&client, format!("ws://127.0.0.1:{}/myko", hub.port)).await);
+
+    let mk_entry = |title: &str, created: &str, oid: &str| {
+        let task = Task {
+            id: "feed0000feed0000feed0000feed0000".into(),
+            project_id: "projO".into(),
+            title: title.into(),
+            body: String::new(),
+            priority: Default::default(),
+            labels: vec![],
+            created_by_dev: "d@e".into(),
+            created_by_machine: "m".into(),
+            created: "2026-07-01T00:00:00.000000Z".into(),
+        };
+        let mut inner = MEvent::from_item(&task, MEventType::SET, "m");
+        inner.created_at = created.to_string();
+        let mut cbor = Vec::new();
+        ciborium::into_writer(&inner, &mut cbor).unwrap();
+        LogEntry::wrap(oid, "projO", &cbor, created)
+    };
+
+    // Newer edit arrives first; the older original arrives later (e.g. from
+    // a machine that synced late). LWW: the newer title must survive.
+    let newer = mk_entry(
+        "newer title",
+        "2026-07-02T00:00:00.000000Z",
+        "bbbb000011112222bbbb000011112222bbbb0000",
+    );
+    let older = mk_entry(
+        "older title",
+        "2026-07-01T12:00:00.000000Z",
+        "aaaa000011112222aaaa000011112222aaaa0000",
+    );
+
+    let _ = client.send_event(MEvent::from_item(&newer, MEventType::SET, "test"));
+    // Wait until the newer edit is applied before sending the stale one.
+    let tasks = client.watch_query(levi_core::GetAllTasks {});
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if tasks.get().iter().any(|t| t.title == "newer title") {
+            break;
+        }
+        assert!(Instant::now() < deadline, "newer event never applied");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let _ = client.send_event(MEvent::from_item(&older, MEventType::SET, "test"));
+    // Give the saga time to (wrongly) apply the stale event, then check.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let titles: Vec<String> = tasks
+        .get()
+        .iter()
+        .filter(|t| &*t.id.0 == "feed0000feed0000feed0000feed0000")
+        .map(|t| t.title.clone())
+        .collect();
+    assert_eq!(
+        titles,
+        ["newer title"],
+        "stale event must not clobber newer state"
+    );
+}

@@ -139,7 +139,9 @@ impl HubSession {
         if events.is_empty() {
             return Ok(());
         }
-        let _ = self.client.send_event_batch(events);
+        self.client
+            .send_event_batch(events)
+            .map_err(|e| anyhow::anyhow!("event batch send failed: {e}"))?;
         // Round-trip barrier: a report response means the batch was consumed.
         let _: levi_core::ProjectCount =
             self.report_once(levi_core::CountAllProjects {}, Duration::from_secs(10))?;

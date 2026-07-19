@@ -180,5 +180,15 @@ fn connect() {
             let hostname = location.hostname().unwrap_or_else(|_| "localhost".into());
             format!("{hostname}:7377")
         });
+    // Secure pages must use wss:// — browsers block mixed-content ws://.
+    let hub = if hub.contains("://") {
+        hub
+    } else {
+        let scheme = match location.protocol().as_deref() {
+            Ok("https:") => "wss",
+            _ => "ws",
+        };
+        format!("{scheme}://{hub}")
+    };
     myko_leptos::provide_myko(&hub);
 }

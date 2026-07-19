@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use gix::ObjectId;
+use levi_core::materialize::World;
 use levi_core::{CommitFact, RefFact, ref_fact_id};
 use myko::wire::MEvent;
 
@@ -17,8 +18,11 @@ use crate::hub_client::HubSession;
 
 const DEPTH_CAP: usize = 2000;
 
-pub fn publish(ctx: &LeviCtx, session: &HubSession) -> Result<usize> {
-    let project_id = ctx.project_id()?;
+pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usize> {
+    let Some(project) = &world.project else {
+        bail!("no levi project");
+    };
+    let project_id = project.id.to_string();
     let repo = ctx.store.repo();
 
     let cache_path = repo.common_dir().join("levi").join("facts-published");
@@ -29,7 +33,7 @@ pub fn publish(ctx: &LeviCtx, session: &HubSession) -> Result<usize> {
     // Roots: every anchor sha + every local branch head.
     let mut roots: Vec<ObjectId> = Vec::new();
     let mut ref_facts: Vec<MEvent> = Vec::new();
-    for change in &ctx.world.status_changes {
+    for change in &world.status_changes {
         if let Some(sha) = &change.anchor_commit
             && let Ok(oid) = ObjectId::from_hex(sha.as_bytes())
         {
@@ -97,6 +101,28 @@ pub fn publish(ctx: &LeviCtx, session: &HubSession) -> Result<usize> {
 
     let fact_count = events.len();
     session.send_events(events)?;
+
+    // Verify the hub actually has every new sha before recording it in the
+    // dedup cache — a dropped batch would otherwise never be re-sent from
+    // this checkout. Presence is checked by id (not by count) so facts
+    // concurrently published by another machine don't confuse the check.
+    if !new_shas.is_empty() {
+        session
+            .query_at_least(
+                levi_core::GetCommitFactsByIds {
+                    ids: new_shas.iter().map(|s| s.as_str().into()).collect(),
+                },
+                new_shas.len(),
+                Duration::from_secs(10),
+            )
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "hub did not acknowledge all {} new commit facts; \
+                     not recording them as published: {e}",
+                    new_shas.len()
+                )
+            })?;
+    }
 
     if !new_shas.is_empty() {
         if let Some(dir) = cache_path.parent() {

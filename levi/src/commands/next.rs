@@ -9,7 +9,7 @@ use levi_core::Claim;
 use levi_core::ids::short_id;
 use levi_core::materialize::materialize;
 use levi_core::rank::{RankedTask, rank_next};
-use levi_core::resolve::Resolution;
+use levi_core::resolve::{Resolution, Status, effective_status};
 use serde_json::json;
 
 use crate::ctx::LeviCtx;
@@ -52,7 +52,29 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
         };
         let event = ctx.set_event(&claim_item);
         let appended = ctx.store.append_if(&[event], |records| {
+            // Full eligibility recheck inside the critical section: another
+            // process may have closed the task (or its blocker may have
+            // reopened, or a claim landed) between our rank() and this lock.
             let world = materialize(records.to_vec());
+            if !world.tasks.contains_key(&task_id) {
+                return false;
+            }
+            let mut anc = crate::ancestors::GixAncestors::new(ctx.store.repo());
+            let is_open = |anc: &mut crate::ancestors::GixAncestors, id: &str| {
+                effective_status(&world.changes_for(id), anc, Resolution::Exact).status
+                    == Status::Open
+            };
+            if !is_open(&mut anc, &task_id) {
+                return false;
+            }
+            let blocked_by_open_blocker = world.deps.values().any(|dep| {
+                *dep.blocked_task_id == task_id
+                    && world.tasks.contains_key(&*dep.blocker_task_id)
+                    && is_open(&mut anc, &dep.blocker_task_id)
+            });
+            if blocked_by_open_blocker {
+                return false;
+            }
             match world.live_claim(&task_id, now) {
                 None => true,
                 Some(c) => c.dev == me.dev && c.machine == me.machine && c.worktree == me.worktree,

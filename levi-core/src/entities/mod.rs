@@ -1,3 +1,4 @@
+mod applied;
 mod claim;
 mod comment;
 mod commit_fact;
@@ -8,6 +9,7 @@ mod ref_fact;
 mod status_change;
 mod task;
 
+pub use applied::*;
 pub use claim::*;
 pub use comment::*;
 pub use commit_fact::*;

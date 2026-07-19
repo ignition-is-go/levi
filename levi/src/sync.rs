@@ -6,8 +6,9 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use levi_core::LogEntry;
+use levi_core::materialize::materialize;
 use myko::wire::{MEvent, MEventType};
 
 use crate::ctx::LeviCtx;
@@ -25,7 +26,15 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     let Some(addr) = ctx.config.hub.clone() else {
         return Ok(None);
     };
-    let project_id = ctx.project_id()?;
+    // Re-read and re-materialize: opportunistic syncs run right after an
+    // append, and ctx.world predates it (init's Project event, a close's
+    // StatusChange anchor, ...).
+    let local = ctx.store.read()?;
+    let world = materialize(local.clone());
+    let Some(project) = &world.project else {
+        bail!("no levi project here yet");
+    };
+    let project_id = project.id.to_string();
     let timeout = Duration::from_secs(10);
 
     let session = HubSession::connect(&addr, timeout)?;
@@ -35,7 +44,6 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     let hub_ids: HashSet<String> = hub_entries.iter().map(|e| e.id.to_string()).collect();
 
     // Push: local events the hub lacks, wrapped as LogEntries.
-    let local = ctx.store.read()?;
     let local_ids: HashSet<String> = local.iter().map(|r| r.id.clone()).collect();
     let mut push = Vec::new();
     for record in &local {
@@ -73,7 +81,7 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     }
 
     // Facts leg (spec leg 3) rides the same session.
-    let facts = crate::facts::publish(ctx, &session)?;
+    let facts = crate::facts::publish(ctx, &world, &session)?;
 
     session.close();
     Ok(Some(format!(
@@ -83,7 +91,7 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
 
 /// Best-effort, silent. No hub configured (or `--no-sync`) ⇒ no-op.
 pub fn opportunistic(ctx: &LeviCtx) {
-    if ctx.config.hub.is_none() || ctx.world.project.is_none() {
+    if ctx.config.hub.is_none() {
         return;
     }
     if let Err(e) = hub_leg(ctx) {

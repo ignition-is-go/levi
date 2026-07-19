@@ -17,45 +17,46 @@ use crate::output::SCHEMA_WATCH;
 pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
     let Some(addr) = ctx.config.hub.clone() else {
         bail!(
-            "levi watch needs a hub: set one with `git config levi.hub <host:port>` \
-             (or [hub] address in ~/.config/levi/config.toml)"
+            "levi watch needs a hub: run `levi onboard --hub <host:port>` \
+             (writes .levi/config.toml), or set [hub] address in \
+             ~/.config/levi/config.toml"
         );
     };
     let project_id = ctx.project_id()?;
     let session = HubSession::connect(&addr, Duration::from_secs(10))?;
 
-    // History size first: everything up to this count is history, not news.
+    // History = the explicit id set fetched up-front (count-marked, so the
+    // snapshot is complete). Anything not in it is news — including events
+    // that land while we're still catching up, which a count-based
+    // "synced" heuristic would silently swallow.
+    let seen_init: HashSet<String> = session
+        .log_entries(&project_id, Duration::from_secs(10))?
+        .iter()
+        .map(|e| e.id.to_string())
+        .collect();
+
     let filter = levi_core::PartialLogEntry {
         project_id: Some(project_id.clone()),
         ..Default::default()
     };
-    let history: levi_core::LogEntryCount = session.report_once(
-        levi_core::CountLogEntrys(filter.clone()),
-        Duration::from_secs(10),
-    )?;
     let cell = session
         .client
         .watch_query(levi_core::GetLogEntrysByQuery(filter));
 
     let (tx, rx) = mpsc::channel();
+    let guard_tx = tx.clone();
     let _guard = cell.subscribe(move |sig| {
         if let Signal::Value(entries) = sig {
-            let _ = tx.send(entries.to_vec());
+            let _ = guard_tx.send(entries.to_vec());
         }
     });
+    // Prime with the cell's current value: anything that raced in between
+    // the history fetch and the subscription is caught here.
+    let _ = tx.send(myko::hyphae::Gettable::get(&cell).to_vec());
 
     eprintln!("watching (ctrl-c to stop)…");
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut synced = history.count == 0;
+    let mut seen = seen_init;
     while let Ok(entries) = rx.recv() {
-        if !synced {
-            // Swallow the seed + initial snapshot silently.
-            for entry in &entries {
-                seen.insert(entry.id.to_string());
-            }
-            synced = entries.len() >= history.count;
-            continue;
-        }
         let mut batch: Vec<_> = entries
             .iter()
             .filter(|e| !seen.contains(&*e.id.0))
