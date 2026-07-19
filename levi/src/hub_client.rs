@@ -1,9 +1,6 @@
 //! Hub connection for the sync hub leg, facts leg, and `levi watch`.
 //! The CLI is synchronous; each session owns a small tokio runtime.
 //!
-//! Auth: the front door accepts `?token=` on the WS URL, and
-//! `MykoClient::set_address` preserves query strings — so no custom
-//! transport is needed.
 
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -23,20 +20,17 @@ pub struct HubSession {
     pub runtime: tokio::runtime::Runtime,
 }
 
-pub fn ws_url(addr: &str, token: Option<&str>) -> String {
+pub fn ws_url(addr: &str) -> String {
     let base = if addr.starts_with("ws://") || addr.starts_with("wss://") {
         addr.trim_end_matches('/').to_string()
     } else {
         format!("ws://{}", addr.trim_end_matches('/'))
     };
-    match token {
-        Some(t) => format!("{base}/myko?token={t}"),
-        None => format!("{base}/myko"),
-    }
+    format!("{base}/myko")
 }
 
 impl HubSession {
-    pub fn connect(addr: &str, token: Option<&str>, timeout: Duration) -> Result<Self> {
+    pub fn connect(addr: &str, timeout: Duration) -> Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -53,7 +47,7 @@ impl HubSession {
                 let _ = tx.send(());
             }
         });
-        client.set_address(Some(ws_url(addr, token)));
+        client.set_address(Some(ws_url(addr)));
         let connected = rx.recv_timeout(timeout).is_ok();
         drop(guard);
         if !connected {

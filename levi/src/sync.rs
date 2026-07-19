@@ -28,7 +28,7 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     let project_id = ctx.project_id()?;
     let timeout = Duration::from_secs(10);
 
-    let session = HubSession::connect(&addr, ctx.config.token.as_deref(), timeout)?;
+    let session = HubSession::connect(&addr, timeout)?;
 
     // What does the hub have for this project?
     let hub_entries = session.log_entries(&project_id, timeout)?;

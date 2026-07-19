@@ -1,5 +1,4 @@
-//! Hub integration: token enforcement at the front door, and LogEntry
-//! unwrapping into queryable entities via the saga.
+//! Hub integration: LogEntry unwrapping into queryable entities via the saga.
 
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
@@ -30,30 +29,18 @@ fn free_port() -> u16 {
         .port()
 }
 
-fn start_hub(token: Option<&str>) -> Hub {
+fn start_hub() -> Hub {
     let port = free_port();
-    let internal = free_port();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_levi-hub"));
-    cmd.args([
-        "serve",
-        "--bind",
-        &format!("127.0.0.1:{port}"),
-        "--internal-port",
-        &internal.to_string(),
-    ])
-    .env_remove("MYKO_POSTGRES_URL")
-    .env_remove("LEVI_HUB_TOKEN");
+    cmd.args(["serve", "--bind", &format!("127.0.0.1:{port}")])
+        .env_remove("MYKO_POSTGRES_URL");
     if std::env::var_os("DEBUG_HUB").is_some() {
         cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     } else {
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
-    if let Some(t) = token {
-        cmd.args(["--token", t]);
-    }
     let child = cmd.spawn().expect("hub starts");
     let hub = Hub { child, port };
-    // Wait for the front door to accept connections.
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if std::net::TcpStream::connect(("127.0.0.1", hub.port)).is_ok() {
@@ -84,41 +71,12 @@ async fn connect(client: &MykoClient, addr: String) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn wrong_token_rejected_correct_token_accepted() {
-    let hub = start_hub(Some("sekrit"));
-
-    // Raw WS handshake without the token: rejected with HTTP 401.
-    let err = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/myko", hub.port)).await;
-    assert!(err.is_err(), "connection without token must fail");
-
-    // Wrong token: also rejected.
-    let err =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/myko?token=nope", hub.port))
-            .await;
-    assert!(err.is_err(), "connection with wrong token must fail");
-
-    // Correct token: handshake succeeds.
-    let ok =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/myko?token=sekrit", hub.port))
-            .await;
-    assert!(
-        ok.is_ok(),
-        "connection with correct token must succeed: {:?}",
-        ok.err()
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn log_entry_saga_unwraps_into_queryable_task() {
-    let hub = start_hub(Some("sekrit"));
+    let hub = start_hub();
     let client = MykoClient::new();
     assert!(
-        connect(
-            &client,
-            format!("ws://127.0.0.1:{}/myko?token=sekrit", hub.port)
-        )
-        .await,
-        "client connects through the front door"
+        connect(&client, format!("ws://127.0.0.1:{}/myko", hub.port)).await,
+        "client connects to the hub"
     );
 
     // Wrap a Task SET the way the CLI's hub leg does.

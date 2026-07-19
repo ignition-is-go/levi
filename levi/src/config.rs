@@ -8,8 +8,6 @@ use std::path::PathBuf;
 pub struct LeviConfig {
     /// Hub address, e.g. "localhost:7377" (`git config levi.hub`).
     pub hub: Option<String>,
-    /// Shared bearer token for the hub (`git config levi.token`).
-    pub token: Option<String>,
     /// Git remote for the sync git leg (`git config levi.remote`, default "origin").
     pub remote: String,
     /// Claim ttl (`git config levi.claimTtlSecs`, default 24h).
@@ -23,7 +21,6 @@ impl LeviConfig {
         let get = |key: &str| snap.string(key).map(|v| v.to_string());
         LeviConfig {
             hub: get("levi.hub").or(file.hub),
-            token: get("levi.token").or(file.token),
             remote: get("levi.remote")
                 .or(file.remote)
                 .unwrap_or_else(|| "origin".into()),
@@ -38,7 +35,6 @@ impl LeviConfig {
 #[derive(Default)]
 struct FileConfig {
     hub: Option<String>,
-    token: Option<String>,
     remote: Option<String>,
     claim_ttl_secs: Option<u64>,
 }
@@ -63,7 +59,6 @@ impl FileConfig {
             |table: &str, key: &str| doc.get(table)?.get(key)?.as_str().map(str::to_string);
         FileConfig {
             hub: str_at("hub", "address"),
-            token: str_at("hub", "token"),
             remote: str_at("sync", "remote"),
             claim_ttl_secs: doc
                 .get("claim")

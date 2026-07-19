@@ -13,16 +13,12 @@ myko = { workspace = true }
 myko-server = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
-log = { workspace = true }
-env_logger = { workspace = true }
+tracing = "0.1"
 clap = { version = "4", features = ["derive"] }
-axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.6", features = ["fs"] }
-tokio-tungstenite = "0.24"
-futures-util = "0.3"
 
 [dev-dependencies]
 serde_json = { workspace = true }
 ciborium = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
+tokio-tungstenite = "0.24"

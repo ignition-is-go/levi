@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 
 use crate::pages;
 
@@ -46,28 +45,25 @@ pub fn App() -> impl IntoView {
     }
 }
 
-/// Stash `?token=` into the `levi_token` cookie (the front door checks it on
-/// the same-origin WS upgrade), then connect to the hub we were served from.
+/// Connect to the hub: `?hub=host:port` overrides, otherwise the page's
+/// hostname on the default hub port (the dashboard is a standalone CSR app —
+/// `trunk serve` in dev — talking straight to levi-hub's /myko).
 fn connect() {
     let window = web_sys::window().expect("window");
     let location = window.location();
-    if let Ok(search) = location.search()
-        && let Some(token) = search
-            .trim_start_matches('?')
-            .split('&')
-            .find_map(|p| p.strip_prefix("token="))
-        && !token.is_empty()
-        && let Some(doc) = window.document()
-        && let Ok(html_doc) = doc.dyn_into::<web_sys::HtmlDocument>()
-    {
-        let _ = html_doc.set_cookie(&format!(
-            "levi_token={token}; path=/; max-age=31536000; samesite=strict"
-        ));
-    }
-    let host = location.host().unwrap_or_else(|_| "localhost:7377".into());
-    let scheme = match location.protocol().as_deref() {
-        Ok("https:") => "wss",
-        _ => "ws",
-    };
-    myko_leptos::provide_myko(&format!("{scheme}://{host}"));
+    let hub = location
+        .search()
+        .ok()
+        .and_then(|search| {
+            search
+                .trim_start_matches('?')
+                .split('&')
+                .find_map(|p| p.strip_prefix("hub=").map(str::to_string))
+        })
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| {
+            let hostname = location.hostname().unwrap_or_else(|_| "localhost".into());
+            format!("{hostname}:7377")
+        });
+    myko_leptos::provide_myko(&hub);
 }

@@ -52,31 +52,38 @@ levi sync            # all legs; --no-git / --no-hub to skip one
 - **git leg**: `refs/levi/events` is fetched from / pushed to your remote
   (`git config levi.remote`, default `origin`). Histories union-merge;
   events are content-addressed and immutable, so sync never conflicts.
-- **hub leg**: with `git config levi.hub <host:port>` (and `levi.token`),
-  events are exchanged with a levi-hub — machines that share no git remote
-  converge through it. Every mutating command also does an opportunistic
-  best-effort hub sync (`--no-sync` to skip).
+- **hub leg**: with `git config levi.hub <host:port>`, events are exchanged
+  with a levi-hub — machines that share no git remote converge through it.
+  Every mutating command also does an opportunistic best-effort hub sync
+  (`--no-sync` to skip).
 - **facts leg**: commit-graph slices (sha → parents, branch heads) are
   published so the git-free hub can resolve ancestry.
 
 Config file fallback: `~/.config/levi/config.toml`
-(`[hub] address/token`, `[sync] remote`, `[claim] ttl_secs`).
+(`[hub] address`, `[sync] remote`, `[claim] ttl_secs`).
 
 ## Hub + dashboard
 
 ```sh
-MYKO_POSTGRES_URL=postgres://… \
-LEVI_HUB_TOKEN=sekrit \
-levi-hub serve --bind 0.0.0.0:7377 --dash-dir levi-dash/dist
+MYKO_POSTGRES_URL=postgres://… levi-hub serve --bind 0.0.0.0:7377
 ```
 
-Without `MYKO_POSTGRES_URL` the hub holds events in memory only. The token
-gates the WebSocket endpoint (`?token=` for CLIs, `levi_token` cookie for the
-browser — visit `http://hub:7377/?token=sekrit` once). `levi watch` streams
-live events from the hub; the dashboard serves an overview (open/closed
-counts, P0 alerts, activity feed), in-flight claims by dev → machine →
-worktree, and a project browser with a branch selector: any project's tasks
-as resolved against any branch, from commit facts alone.
+The hub is a plain myko CellServer (`ws://<bind>/myko`); without
+`MYKO_POSTGRES_URL` it holds events in memory only. `levi watch` streams
+live events from it.
+
+The dashboard is a standalone Leptos CSR app:
+
+```sh
+cd levi-dash && trunk serve       # dev, http://localhost:1420
+cd levi-dash && trunk build       # dist/ — host the static files anywhere
+```
+
+It connects to `ws://<page-hostname>:7377/myko` by default; override with
+`?hub=host:port`. Pages: overview (open/closed counts, P0 alerts, live
+activity feed), in-flight claims by dev → machine → worktree, and a project
+browser with a branch selector: any project's tasks as resolved against any
+branch, from commit facts alone.
 
 ## Testing
 

@@ -81,18 +81,19 @@ pub fn orphaned_anchors(
     // Collect ref tips once (branches, tags, remotes — not refs/levi/*).
     let mut tips: Vec<ObjectId> = Vec::new();
     if let Ok(platform) = repo.references()
-        && let Ok(iter) = platform.all() {
-            for reference in iter.flatten() {
-                let name = reference.name().as_bstr().to_string();
-                if name.starts_with("refs/levi/") {
-                    continue;
-                }
-                let mut reference = reference;
-                if let Ok(id) = reference.peel_to_id() {
-                    tips.push(id.detach());
-                }
+        && let Ok(iter) = platform.all()
+    {
+        for reference in iter.flatten() {
+            let name = reference.name().as_bstr().to_string();
+            if name.starts_with("refs/levi/") {
+                continue;
+            }
+            let mut reference = reference;
+            if let Ok(id) = reference.peel_to_id() {
+                tips.push(id.detach());
             }
         }
+    }
     let mut orphaned = Vec::new();
     let mut seen = HashMap::new();
     for sha in anchors {

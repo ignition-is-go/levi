@@ -22,7 +22,7 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
         );
     };
     let project_id = ctx.project_id()?;
-    let session = HubSession::connect(&addr, ctx.config.token.as_deref(), Duration::from_secs(10))?;
+    let session = HubSession::connect(&addr, Duration::from_secs(10))?;
 
     // History size first: everything up to this count is history, not news.
     // (GetAll* + client-side filter — see hub_client::log_entries for why.)
