@@ -29,6 +29,11 @@ suite; the dashboard builds with `trunk build` in `levi-dash/`.
 ## Conventions
 
 - Never include AI/Claude attribution or references in commit messages or PRs.
+- **Conventional commits are required** — `cargo flux version` derives the
+  next semver from commit messages, and the release workflow runs on every
+  push to main. `feat:` bumps minor, `fix:`/most other types bump patch,
+  `feat!:`/`BREAKING CHANGE:` bumps major, `chore(release):` commits are the
+  stamps flux itself creates (never write one by hand).
 
 <!-- levi:begin -->
 ## Task tracking (levi)
