@@ -114,11 +114,9 @@ impl HubSession {
         }
     }
 
-    /// This project's LogEntries as the hub currently knows them: the count
-    /// report is the "hub has answered" marker, then the ByQuery cell catches
-    /// up to it. (levi entity fields deliberately avoid the wire keys
-    /// `QueryRequest` flattens beside the query — `createdAt`/`tx` — which is
-    /// why entities use `created`, not `created_at`.)
+    /// This project's LogEntries as the hub currently knows them (used by
+    /// `levi watch` for its history snapshot; the sync hub leg uses the
+    /// Merkle bucket walk instead).
     pub fn log_entries(
         &self,
         project_id: &str,

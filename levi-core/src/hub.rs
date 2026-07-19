@@ -18,7 +18,9 @@ use myko::prelude::*;
 use myko::saga::{SagaContext, SagaHandler};
 use myko::wire::MEventType;
 
-use crate::entities::{Applied, GetAppliedsByIds, LogEntry, applied_id};
+use crate::entities::{
+    Applied, GetAppliedsByIds, GetLogEntrysByQuery, LogEntry, PartialLogEntry, applied_id,
+};
 
 /// Apply the event wrapped inside a LogEntry to this node's stores, unless a
 /// newer event for the same entity was already applied (LWW by
@@ -95,6 +97,78 @@ impl SagaHandler for UnwrapLogEntries {
         Some(ApplyLogEntry {
             cbor_b64: item.cbor_b64,
             event_oid: item.id.to_string(),
+        })
+    }
+}
+
+/// Bucketed hash summary of a project's LogEntry ids — the hub side of the
+/// Merkle-style sync comparison (see `crate::merkle`). Reactive: recomputes
+/// as entries arrive.
+#[myko_report_output]
+pub struct LogEntryBucketsOut {
+    pub buckets: std::collections::BTreeMap<String, String>,
+}
+
+#[myko_report(LogEntryBucketsOut)]
+pub struct LogEntryBuckets {
+    pub project_id: String,
+}
+
+impl myko::report::ReportHandler for LogEntryBuckets {
+    type Output = LogEntryBucketsOut;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn compute(
+        &self,
+        ctx: myko::report::ReportContext,
+    ) -> impl myko::hyphae::MaterializeDefinite<Arc<Self::Output>> {
+        ctx.query_map(GetLogEntrysByQuery(PartialLogEntry {
+            project_id: Some(self.project_id.clone()),
+            ..Default::default()
+        }))
+        .items()
+        .map(|entries| {
+            Arc::new(LogEntryBucketsOut {
+                buckets: crate::merkle::bucket_hashes(entries.iter().map(|e| &*e.id.0)),
+            })
+        })
+    }
+}
+
+/// The ids inside one bucket — fetched only for buckets whose hashes differ.
+#[myko_report_output]
+pub struct LogEntryBucketIdsOut {
+    pub ids: Vec<String>,
+}
+
+#[myko_report(LogEntryBucketIdsOut)]
+pub struct LogEntryBucketIds {
+    pub project_id: String,
+    pub bucket: String,
+}
+
+impl myko::report::ReportHandler for LogEntryBucketIds {
+    type Output = LogEntryBucketIdsOut;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn compute(
+        &self,
+        ctx: myko::report::ReportContext,
+    ) -> impl myko::hyphae::MaterializeDefinite<Arc<Self::Output>> {
+        let bucket = self.bucket.clone();
+        ctx.query_map(GetLogEntrysByQuery(PartialLogEntry {
+            project_id: Some(self.project_id.clone()),
+            ..Default::default()
+        }))
+        .items()
+        .map(move |entries| {
+            let mut ids: Vec<String> = entries
+                .iter()
+                .map(|e| e.id.to_string())
+                .filter(|id| id.starts_with(&bucket))
+                .collect();
+            ids.sort_unstable();
+            Arc::new(LogEntryBucketIdsOut { ids })
         })
     }
 }

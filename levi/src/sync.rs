@@ -41,33 +41,83 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
 
     let session = HubSession::connect(&addr, timeout)?;
 
-    // What does the hub have for this project?
-    let hub_entries = session.log_entries(&project_id, timeout)?;
-    let hub_ids: HashSet<String> = hub_entries.iter().map(|e| e.id.to_string()).collect();
+    // Merkle-style comparison (spec §Sync): compare 2-hex-prefix bucket
+    // hashes of event ids first; only differing buckets are enumerated and
+    // only missing events are transferred. Same-state syncs cost one small
+    // report round trip instead of the full log.
+    let hub_buckets: levi_core::hub::LogEntryBucketsOut = session.report_once(
+        levi_core::hub::LogEntryBuckets {
+            project_id: project_id.clone(),
+        },
+        timeout,
+    )?;
+    let local_ids_all: Vec<&str> = local.iter().map(|r| r.id.as_str()).collect();
+    let local_buckets = levi_core::merkle::bucket_hashes(local_ids_all.iter().copied());
 
-    // Push: local events the hub lacks, wrapped as LogEntries.
-    let local_ids: HashSet<String> = local.iter().map(|r| r.id.clone()).collect();
-    let mut push = Vec::new();
-    for record in &local {
-        if !hub_ids.contains(&record.id) {
-            let bytes = EventStore::encode(&record.event);
-            let entry = LogEntry::wrap(&record.id, &project_id, &bytes, &record.event.created_at);
-            push.push(MEvent::from_item(
-                &entry,
-                MEventType::SET,
-                &ctx.identity.machine,
-            ));
+    let mut differing: Vec<&String> = Vec::new();
+    for bucket in local_buckets.keys().chain(hub_buckets.buckets.keys()) {
+        if local_buckets.get(bucket) != hub_buckets.buckets.get(bucket)
+            && !differing.contains(&bucket)
+        {
+            differing.push(bucket);
         }
     }
+
+    let mut push = Vec::new();
+    let mut pull_ids: Vec<String> = Vec::new();
+    for bucket in differing {
+        let hub_ids: HashSet<String> = session
+            .report_once::<levi_core::hub::LogEntryBucketIds, levi_core::hub::LogEntryBucketIdsOut>(
+                levi_core::hub::LogEntryBucketIds {
+                    project_id: project_id.clone(),
+                    bucket: bucket.clone(),
+                },
+                timeout,
+            )?
+            .ids
+            .into_iter()
+            .collect();
+        for record in local.iter().filter(|r| r.id.starts_with(bucket.as_str())) {
+            if !hub_ids.contains(&record.id) {
+                let bytes = EventStore::encode(&record.event);
+                let entry =
+                    LogEntry::wrap(&record.id, &project_id, &bytes, &record.event.created_at);
+                push.push(MEvent::from_item(
+                    &entry,
+                    MEventType::SET,
+                    &ctx.identity.machine,
+                ));
+            }
+        }
+        let local_in_bucket: HashSet<&str> = local
+            .iter()
+            .map(|r| r.id.as_str())
+            .filter(|id| id.starts_with(bucket.as_str()))
+            .collect();
+        pull_ids.extend(
+            hub_ids
+                .into_iter()
+                .filter(|id| !local_in_bucket.contains(id.as_str())),
+        );
+    }
+
     let pushed = push.len();
     session.send_events(push)?;
 
-    // Pull: hub events we lack; unwrap and append (content addressing dedups
-    // and re-derives the id from the bytes — a tampered id cannot smuggle a
-    // mismatched event into the ref).
-    let mut pull = Vec::new();
-    for entry in &hub_entries {
-        if !local_ids.contains(&*entry.id.0) {
+    // Pull: fetch only the missing entries by id; unwrap and append
+    // (content addressing dedups and re-derives the id from the bytes — a
+    // tampered id cannot smuggle a mismatched event into the ref).
+    let pulled = pull_ids.len();
+    if !pull_ids.is_empty() {
+        let entries = session.query_at_least(
+            levi_core::GetLogEntrysByIds {
+                ids: pull_ids.iter().map(|i| i.as_str().into()).collect(),
+            },
+            pull_ids.len(),
+            timeout,
+        )?;
+        let mut pull = Vec::new();
+        for entry in &entries {
             match entry.unwrap_event() {
                 Ok(event) => pull.push(event),
                 Err(e) => eprintln!(
@@ -76,9 +126,6 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
                 ),
             }
         }
-    }
-    let pulled = pull.len();
-    if !pull.is_empty() {
         ctx.store.append(&pull)?;
     }
 
