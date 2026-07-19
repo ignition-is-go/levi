@@ -4,7 +4,7 @@
 use leptos::prelude::*;
 use mullion::{
     ActivityDef, ActivityIcon, ActivityId, Category, CategoryId, MullionContext, MullionPaneTree,
-    MullionProvider, MullionTheme, PaneId, PaneNode,
+    MullionProvider, MullionTheme, PaneEvent, PaneId, PaneNode, SplitDirection,
 };
 use pulse_leptos_ui::{BaseStyle, Styleable, tokens, use_style};
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,40 @@ fn categories() -> Vec<Category<PaneState>> {
     }]
 }
 
+const LAYOUT_KEY: &str = "levi.layout";
+
+/// Default layout: the project browser as the main working pane, with the
+/// overview and in-flight views stacked in a side column.
+fn default_tree() -> PaneNode<PaneState> {
+    let leaf = |id: &str, activity: &str| {
+        Box::new(PaneNode::leaf_with_activity(
+            PaneId::new(id),
+            ActivityId::new(activity),
+            PaneState::default(),
+        ))
+    };
+    PaneNode::Split {
+        direction: SplitDirection::Horizontal,
+        ratio: 0.62,
+        first: leaf("main", "browser"),
+        second: Box::new(PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: leaf("side-top", "overview"),
+            second: leaf("side-bottom", "in-flight"),
+        }),
+    }
+}
+
+fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok()?
+}
+
+fn stored_tree() -> Option<PaneNode<PaneState>> {
+    let json = local_storage()?.get_item(LAYOUT_KEY).ok()??;
+    serde_json::from_str(&json).ok()
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     connect();
@@ -71,14 +105,18 @@ pub fn App() -> impl IntoView {
         ..Default::default()
     });
 
-    let initial_tree = PaneNode::leaf_with_activity(
-        PaneId::new("main"),
-        ActivityId::new("overview"),
-        PaneState::default(),
-    );
+    // Last-used layout wins; sensible default on first visit.
+    let initial_tree = stored_tree().unwrap_or_else(default_tree);
 
     let base_css = use_style::<BaseStyle>().css();
-    let on_event = |_event: mullion::PaneEvent<PaneState>| {};
+    let on_event = |event: PaneEvent<PaneState>| {
+        if let PaneEvent::TreeChanged { tree } = event
+            && let Some(storage) = local_storage()
+            && let Ok(json) = serde_json::to_string(&tree)
+        {
+            let _ = storage.set_item(LAYOUT_KEY, &json);
+        }
+    };
 
     view! {
         <style>{base_css}</style>
