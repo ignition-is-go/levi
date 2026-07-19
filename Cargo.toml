@@ -5,7 +5,6 @@ members = ["levi-core", "levi", "levi-hub", "levi-dash"]
 default-members = ["levi-core", "levi", "levi-hub"]
 
 [workspace.package]
-version = "0.1.1"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 
@@ -14,7 +13,7 @@ myko = "4.24"
 myko-server = "4.24"
 myko-leptos = "4.24"
 autosocket = "4.24"
-levi-core = { path = "levi-core" }
+levi-core = { version = "0.1.1", path = "levi-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ciborium = "0.2"

@@ -21,7 +21,7 @@ fn status_of(ls: &Value, id: &str) -> Option<String> {
 fn two_clones() -> (TestRepo, PathBuf, PathBuf) {
     let base = TestRepo::new();
     let bare = base.path().join("origin.git");
-    base.git(&["init", "-q", "--bare", bare.to_str().unwrap()]);
+    base.git(&["init", "-q", "-b", "main", "--bare", bare.to_str().unwrap()]);
     base.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
     base.git(&["push", "-q", "origin", "main"]);
 
