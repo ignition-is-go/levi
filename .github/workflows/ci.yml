@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo install cargo-flux
+      - run: cargo flux run check
+      - run: cargo flux run lint
+      - run: cargo flux run test
+
+      # wasm32 coverage for levi-dash (see its `[package.metadata.flux]`
+      # tasks list) — `check` alone only exercises the native target, so a
+      # break in `#[cfg(target_arch = "wasm32")]` code would pass CI silently.
+      - run: cargo flux run check-wasm
