@@ -4,7 +4,8 @@
 use leptos::prelude::*;
 use mullion::{
     ActivityDef, ActivityIcon, ActivityId, Category, CategoryId, MullionContext, MullionPaneTree,
-    MullionProvider, MullionTheme, PaneEvent, PaneId, PaneNode, SplitDirection,
+    MullionProvider, MullionTheme, PaneEvent, PaneId, PaneNode, SplitDirection, Workspace,
+    WorkspaceId, WorkspaceManager, WorkspaceSwitcher,
 };
 use pulse_leptos_ui::{BaseStyle, Styleable, tokens, use_style};
 use serde::{Deserialize, Serialize};
@@ -54,38 +55,92 @@ fn categories() -> Vec<Category<PaneState>> {
     }]
 }
 
-const LAYOUT_KEY: &str = "levi.layout";
+const WORKSPACES_KEY: &str = "levi.workspaces";
+const LEGACY_LAYOUT_KEY: &str = "levi.layout";
 
-/// Default layout: the project browser as the main working pane, with the
-/// overview and in-flight views stacked in a side column.
-fn default_tree() -> PaneNode<PaneState> {
-    let leaf = |id: &str, activity: &str| {
-        Box::new(PaneNode::leaf_with_activity(
-            PaneId::new(id),
-            ActivityId::new(activity),
-            PaneState::default(),
-        ))
-    };
+fn leaf(id: &str, activity: &str) -> Box<PaneNode<PaneState>> {
+    Box::new(PaneNode::leaf_with_activity(
+        PaneId::new(id),
+        ActivityId::new(activity),
+        PaneState::default(),
+    ))
+}
+
+/// "Main": the project browser as the working pane, overview + in-flight
+/// stacked in a side column.
+fn main_tree() -> PaneNode<PaneState> {
     PaneNode::Split {
         direction: SplitDirection::Horizontal,
         ratio: 0.62,
-        first: leaf("main", "browser"),
+        first: leaf("main-browser", "browser"),
         second: Box::new(PaneNode::Split {
             direction: SplitDirection::Vertical,
             ratio: 0.5,
-            first: leaf("side-top", "overview"),
-            second: leaf("side-bottom", "in-flight"),
+            first: leaf("main-overview", "overview"),
+            second: leaf("main-flight", "in-flight"),
         }),
     }
+}
+
+fn default_workspaces() -> Vec<Workspace<PaneState>> {
+    vec![
+        Workspace {
+            id: WorkspaceId("main".into()),
+            name: "Main".into(),
+            tree: main_tree(),
+        },
+        Workspace {
+            id: WorkspaceId("focus".into()),
+            name: "Focus".into(),
+            tree: *leaf("focus-browser", "browser"),
+        },
+        Workspace {
+            id: WorkspaceId("ops".into()),
+            name: "Ops".into(),
+            tree: PaneNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: leaf("ops-overview", "overview"),
+                second: leaf("ops-flight", "in-flight"),
+            },
+        },
+    ]
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredWorkspaces {
+    active: String,
+    workspaces: Vec<Workspace<PaneState>>,
 }
 
 fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok()?
 }
 
-fn stored_tree() -> Option<PaneNode<PaneState>> {
-    let json = local_storage()?.get_item(LAYOUT_KEY).ok()??;
-    serde_json::from_str(&json).ok()
+fn stored_workspaces() -> Option<StoredWorkspaces> {
+    let storage = local_storage()?;
+    if let Some(json) = storage.get_item(WORKSPACES_KEY).ok()? {
+        return serde_json::from_str(&json).ok();
+    }
+    // Migrate the pre-workspaces single layout into "Main".
+    let legacy: PaneNode<PaneState> =
+        serde_json::from_str(&storage.get_item(LEGACY_LAYOUT_KEY).ok()??).ok()?;
+    let mut workspaces = default_workspaces();
+    workspaces[0].tree = legacy;
+    Some(StoredWorkspaces {
+        active: "main".into(),
+        workspaces,
+    })
+}
+
+fn persist_workspaces(manager: &WorkspaceManager<PaneState>) {
+    let stored = StoredWorkspaces {
+        active: manager.active_id().0,
+        workspaces: manager.list(),
+    };
+    if let (Some(storage), Ok(json)) = (local_storage(), serde_json::to_string(&stored)) {
+        let _ = storage.set_item(WORKSPACES_KEY, &json);
+    }
 }
 
 #[component]
@@ -105,16 +160,29 @@ pub fn App() -> impl IntoView {
         ..Default::default()
     });
 
-    // Last-used layout wins; sensible default on first visit.
-    let initial_tree = stored_tree().unwrap_or_else(default_tree);
+    // Named workspaces: last-used set wins; sensible defaults on first
+    // visit (with a migration for the pre-workspaces single layout).
+    let stored = stored_workspaces().unwrap_or_else(|| StoredWorkspaces {
+        active: "main".into(),
+        workspaces: default_workspaces(),
+    });
+    let active = WorkspaceId(stored.active.clone());
+    let initial_tree = stored
+        .workspaces
+        .iter()
+        .find(|w| w.id == active)
+        .or_else(|| stored.workspaces.first())
+        .map(|w| w.tree.clone())
+        .unwrap_or_else(main_tree);
+    let manager = WorkspaceManager::new(stored.workspaces, active);
 
     let base_css = use_style::<BaseStyle>().css();
-    let on_event = |event: PaneEvent<PaneState>| {
-        if let PaneEvent::TreeChanged { tree } = event
-            && let Some(storage) = local_storage()
-            && let Ok(json) = serde_json::to_string(&tree)
-        {
-            let _ = storage.set_item(LAYOUT_KEY, &json);
+    let event_manager = manager.clone();
+    let on_event = move |event: PaneEvent<PaneState>| {
+        // Every mutation lands in the active workspace and persists the set.
+        if let PaneEvent::TreeChanged { tree } = event {
+            event_manager.update_tree(&event_manager.active_id(), tree);
+            persist_workspaces(&event_manager);
         }
     };
 
@@ -126,26 +194,36 @@ pub fn App() -> impl IntoView {
             on_event=on_event
             app_icon=ActivityIcon::Svg(ICON_APP.into())
         >
-            <Shell />
+            <Shell manager=manager />
         </MullionProvider>
     }
 }
 
 #[component]
-fn Shell() -> impl IntoView {
+fn Shell(manager: WorkspaceManager<PaneState>) -> impl IntoView {
     let ctx = use_context::<MullionContext<PaneState>>().expect("mullion context");
     let connected = myko_leptos::use_connection_status();
+    // Persist on workspace switches too (the tree may not change).
+    {
+        let manager = manager.clone();
+        let active = manager.active_signal();
+        Effect::new(move || {
+            let _ = active.get();
+            persist_workspaces(&manager);
+        });
+    }
     view! {
         <div style="display:flex;flex-direction:column;height:100%;">
             <div style="flex:1;min-height:0;">
-                <MullionPaneTree ctx=ctx />
+                <MullionPaneTree ctx=ctx.clone() />
             </div>
             <div style=format!(
-                "display:flex;justify-content:flex-end;padding:2px 10px;font-size:11px;\
-                 border-top:1px solid {};color:{};",
+                "display:flex;justify-content:space-between;align-items:center;\
+                 padding:2px 10px;font-size:11px;border-top:1px solid {};color:{};",
                 tokens::BORDER,
                 tokens::TEXT_TERTIARY
             )>
+                <WorkspaceSwitcher manager=manager ctx=ctx />
                 {move || {
                     if connected.get() {
                         view! { <pulse_leptos_ui::Status variant=pulse_leptos_ui::StatusVariant::Success>"live"</pulse_leptos_ui::Status> }
