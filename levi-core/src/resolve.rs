@@ -24,6 +24,12 @@ pub trait AncestorSet {
     fn contains(&mut self, sha: &str) -> Ancestry;
 }
 
+impl<A: AncestorSet + ?Sized> AncestorSet for &mut A {
+    fn contains(&mut self, sha: &str) -> Ancestry {
+        (**self).contains(sha)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Open,
