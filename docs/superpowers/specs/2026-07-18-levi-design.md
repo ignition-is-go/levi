@@ -228,13 +228,8 @@ V1 pages:
 
 ## Licensing note
 
-`myko`/`myko-macros`/`autosocket` are MIT/Apache; `myko-server` is
-AGPL-3.0. The hub links `myko-server` and will be AGPL. Whether the CLI
-needs `myko-server` (for `CellServer` construction) or can drive
-`CellServerCtx` from `myko` core alone determines the CLI's license
-obligations — resolve during implementation; if the CLI must link the
-server crate, either accept AGPL for the whole tool or split the needed
-context machinery into a permissively-licensed layer in myko.
+Deferred — the author owns myko and levi and will pick licenses later.
+Not a design constraint.
 
 ## Testing
 
