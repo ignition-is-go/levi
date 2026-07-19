@@ -124,8 +124,10 @@ impl HubSession {
         project_id: &str,
         timeout: Duration,
     ) -> Result<Vec<Arc<levi_core::LogEntry>>> {
-        let mut filter = levi_core::PartialLogEntry::default();
-        filter.project_id = Some(project_id.to_string());
+        let filter = levi_core::PartialLogEntry {
+            project_id: Some(project_id.to_string()),
+            ..Default::default()
+        };
         let count: levi_core::LogEntryCount =
             self.report_once(levi_core::CountLogEntrys(filter.clone()), timeout)?;
         self.query_at_least(levi_core::GetLogEntrysByQuery(filter), count.count, timeout)

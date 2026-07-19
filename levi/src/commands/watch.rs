@@ -25,8 +25,10 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
     let session = HubSession::connect(&addr, Duration::from_secs(10))?;
 
     // History size first: everything up to this count is history, not news.
-    let mut filter = levi_core::PartialLogEntry::default();
-    filter.project_id = Some(project_id.clone());
+    let filter = levi_core::PartialLogEntry {
+        project_id: Some(project_id.clone()),
+        ..Default::default()
+    };
     let history: levi_core::LogEntryCount = session.report_once(
         levi_core::CountLogEntrys(filter.clone()),
         Duration::from_secs(10),
