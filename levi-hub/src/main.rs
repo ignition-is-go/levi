@@ -39,7 +39,9 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // myko logs through `tracing`; this installs the subscriber (honors
+    // RUST_LOG) so server-side query/command errors are actually visible.
+    let _telemetry = myko_server::telemetry::init_from_env();
     let Cli { cmd } = Cli::parse();
     match cmd {
         Cmd::Serve {

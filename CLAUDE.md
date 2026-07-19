@@ -18,8 +18,13 @@ suite; the dashboard builds with `trunk build` in `levi-dash/`.
   (the hub) must call `levi_core::link()` or inventory registrations vanish.
 - gix ref transactions don't revalidate the expected value after waiting on
   a contended lock; `EventStore` serializes mutations with an flock.
-- myko `Get*ByQuery` live subscriptions don't match server-side (myko 4.24);
-  use `GetAll*` + a `Count*` report as the arrival marker, filter client-side.
+- myko remote `Get*ByQuery` breaks for entities with a `created_at` field:
+  `QueryRequest` flattens the query beside its own camelCase `createdAt`, and
+  `Partial*` serializes `None` as explicit `null`, so the request field gets
+  clobbered and server-side parse fails (`invalid type: null, expected a
+  string`). Server-side `exec_query_first` is unaffected. Fix belongs in myko
+  (`skip_serializing_if` on Partial fields); until then use `GetAll*` + a
+  `Count*` report as the arrival marker and filter client-side.
 
 ## Conventions
 

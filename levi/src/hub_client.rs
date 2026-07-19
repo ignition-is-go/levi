@@ -122,10 +122,12 @@ impl HubSession {
 
     /// This project's LogEntries as the hub currently knows them.
     ///
-    /// NOTE: generated `Get*ByQuery` live subscriptions don't match on the
-    /// hub (observed against myko 4.24: the count report and `GetAll*` both
-    /// see the entity, the ByQuery cell stays empty), so we fetch everything
-    /// with the unfiltered count as the arrival marker and filter here.
+    /// NOTE: remote `Get*ByQuery` can't be used for entities with a
+    /// `created_at` field (myko 4.24): `QueryRequest` flattens the query
+    /// beside its own camelCase `createdAt`, and `Partial*` serializes `None`
+    /// as an explicit `null` that clobbers it, so the server-side parse
+    /// fails. Fetch everything with the unfiltered count as the arrival
+    /// marker and filter here until myko skips nulls in Partial serialization.
     pub fn log_entries(
         &self,
         project_id: &str,
