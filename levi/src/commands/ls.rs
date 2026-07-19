@@ -16,12 +16,20 @@ pub fn warn_orphaned_anchors<'a>(ctx: &LeviCtx, task_ids: impl Iterator<Item = &
             }
         }
     }
-    for sha in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors) {
-        eprintln!(
-            "warning: anchor {} is unreachable from any ref — likely rebased away; \
-             affected tasks may show as open here. Re-run `levi close <id>` at the new HEAD.",
-            &sha[..8.min(sha.len())]
-        );
+    for orphan in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors) {
+        let sha = &orphan.sha[..8.min(orphan.sha.len())];
+        match &orphan.rewritten_as {
+            Some(new_sha) => eprintln!(
+                "warning: anchor {sha} was rewritten as {} (same patch-id); affected tasks \
+                 may show as open here. Re-close with `levi close <id> --anchor {}`.",
+                &new_sha[..8.min(new_sha.len())],
+                &new_sha[..8.min(new_sha.len())],
+            ),
+            None => eprintln!(
+                "warning: anchor {sha} is unreachable from any ref — likely rebased away; \
+                 affected tasks may show as open here. Re-run `levi close <id>` at the new HEAD.",
+            ),
+        }
     }
 }
 

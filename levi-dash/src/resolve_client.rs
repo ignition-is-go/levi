@@ -72,3 +72,17 @@ pub fn claim_live(claim: &levi_core::Claim) -> bool {
     let expires_ms = at.timestamp_millis() as f64 + (claim.ttl_secs as f64) * 1000.0;
     expires_ms > now_ms()
 }
+
+/// Git-style short id for the dashboard: `lv-` + the shortest prefix (min
+/// 4 hex) unique among `all_ids` — mirroring the CLI's `levi_core::ids::short_id`.
+pub fn short_id(all_ids: &[String], id: &str) -> String {
+    let mut len = 4;
+    while len < id.len() {
+        let prefix = &id[..len];
+        if !all_ids.iter().any(|o| o != id && o.starts_with(prefix)) {
+            return format!("lv-{prefix}");
+        }
+        len += 2;
+    }
+    format!("lv-{id}")
+}

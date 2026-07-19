@@ -48,6 +48,14 @@ impl TestRepo {
         self.git(&["rev-parse", "HEAD"]).trim().to_string()
     }
 
+    /// Commit a real file change (patch-id matching needs non-empty diffs).
+    pub fn commit_file(&self, name: &str, content: &str, msg: &str) -> String {
+        std::fs::write(self.path().join(name), content).unwrap();
+        self.git(&["add", name]);
+        self.git(&["commit", "-q", "-m", msg]);
+        self.git(&["rev-parse", "HEAD"]).trim().to_string()
+    }
+
     pub fn branch(&self, name: &str) {
         self.git(&["branch", name]);
     }

@@ -205,3 +205,26 @@ fn mutations_sync_to_git_remote_in_background() {
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
 }
+
+#[test]
+fn rewritten_anchor_suggests_the_new_sha() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("t", &[]);
+    repo.commit_file("fix.txt", "the fix\n", "original message");
+    repo.levi_ok(&["close", &id]);
+    // Reword the commit: same diff, new sha — the anchor is now orphaned
+    // but patch-id matches the rewritten commit.
+    repo.git(&["commit", "--amend", "-q", "-m", "reworded message"]);
+    let new_sha = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+    let out = repo.levi(&["ls", "--all"]).output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(&format!("rewritten as {}", &new_sha[..8])),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("--anchor {}", &new_sha[..8])),
+        "stderr: {stderr}"
+    );
+}

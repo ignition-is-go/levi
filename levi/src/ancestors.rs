@@ -69,15 +69,25 @@ impl AncestorSet for GixAncestors<'_> {
     }
 }
 
+/// An orphaned anchor, with the rewritten commit it likely became when a
+/// patch-id match is found in recent history (spec §Anchoring rules:
+/// "patch-id match against rewritten commits where cheap").
+#[derive(Debug, Clone)]
+pub struct OrphanedAnchor {
+    pub sha: String,
+    pub rewritten_as: Option<String>,
+}
+
 /// Orphaned-anchor detection (spec §Anchoring rules): a rebase/cherry-pick
 /// moves shas, leaving an anchor unreachable from every ref — the task then
 /// looks open on the rewritten history. Correct per the model, but
 /// surprising, so the CLI warns and suggests a re-close. Checks only the
-/// anchors passed in (the tasks being displayed) to stay cheap.
+/// anchors passed in (the tasks being displayed) to stay cheap; patch-id
+/// comparison runs only once an orphan is actually found.
 pub fn orphaned_anchors(
     repo: &gix::Repository,
     anchors: impl IntoIterator<Item = String>,
-) -> Vec<String> {
+) -> Vec<OrphanedAnchor> {
     // Collect ref tips once (branches, tags, remotes — not refs/levi/*).
     let mut tips: Vec<ObjectId> = Vec::new();
     if let Ok(platform) = repo.references()
@@ -120,7 +130,77 @@ pub fn orphaned_anchors(
             orphaned.push(sha);
         }
     }
+    if orphaned.is_empty() {
+        return Vec::new();
+    }
+    // Match orphans against recent history by patch-id: same diff under a
+    // new sha is almost certainly the rebased/reworded descendant.
+    let repo_dir = repo.workdir().unwrap_or_else(|| repo.git_dir()).to_path_buf();
+    let recent = recent_patch_ids(&repo_dir, 300);
     orphaned
+        .into_iter()
+        .map(|sha| {
+            let rewritten_as = patch_id(&repo_dir, &sha).and_then(|pid| {
+                recent
+                    .iter()
+                    .find(|(candidate_pid, candidate_sha)| {
+                        *candidate_pid == pid && *candidate_sha != sha
+                    })
+                    .map(|(_, candidate_sha)| candidate_sha.clone())
+            });
+            OrphanedAnchor { sha, rewritten_as }
+        })
+        .collect()
+}
+
+/// `git patch-id --stable` of one commit; None for empty diffs.
+fn patch_id(repo_dir: &std::path::Path, sha: &str) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let show = Command::new("git")
+        .args(["show", sha])
+        .current_dir(repo_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let out = Command::new("git")
+        .args(["patch-id", "--stable"])
+        .current_dir(repo_dir)
+        .stdin(show.stdout?)
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.split_whitespace().next().map(str::to_string)
+}
+
+/// (patch-id, sha) pairs for the last `limit` commits on HEAD.
+fn recent_patch_ids(repo_dir: &std::path::Path, limit: usize) -> Vec<(String, String)> {
+    use std::process::{Command, Stdio};
+    let Ok(log) = Command::new("git")
+        .args(["log", "-p", "--format=%H", "-n", &limit.to_string()])
+        .current_dir(repo_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return Vec::new();
+    };
+    let Some(stdout) = log.stdout else { return Vec::new() };
+    let Ok(out) = Command::new("git")
+        .args(["patch-id", "--stable"])
+        .current_dir(repo_dir)
+        .stdin(stdout)
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            Some((parts.next()?.to_string(), parts.next()?.to_string()))
+        })
+        .collect()
 }
 
 /// A close that exists in the log but doesn't apply on this checkout — the
