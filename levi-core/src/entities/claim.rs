@@ -1,0 +1,15 @@
+use myko::prelude::*;
+
+/// Advisory claim. id = task_id, so a SET overwrites any prior claim and
+/// "newest wins" falls out of LWW replay order. Ignored after ttl expires.
+#[myko_item]
+pub struct Claim {
+    pub project_id: String,
+    pub task_id: String,
+    pub dev: String,
+    pub machine: String,
+    pub worktree: String,
+    /// RFC3339
+    pub at: String,
+    pub ttl_secs: u64,
+}

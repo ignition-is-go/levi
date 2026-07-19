@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["levi-core", "levi", "levi-hub", "levi-dash"]
+# levi-dash is wasm-only (built with trunk); keep native builds/tests to the rest
+default-members = ["levi-core", "levi", "levi-hub"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+myko = { version = "4.24", path = "../myko/libs/myko/core" }
+myko-server = { version = "4.24", path = "../myko/libs/myko/server" }
+myko-leptos = { version = "4.24", path = "../myko/libs/myko/leptos" }
+autosocket = { version = "4.24", path = "../myko/libs/autosocket" }
+levi-core = { path = "levi-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ciborium = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+base64 = "0.22"
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"

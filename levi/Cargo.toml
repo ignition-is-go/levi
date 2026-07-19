@@ -1,0 +1,19 @@
+[package]
+name = "levi"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "levi"
+path = "src/main.rs"
+
+[dependencies]
+levi-core = { workspace = true }
+myko = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"

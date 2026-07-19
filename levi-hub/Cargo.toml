@@ -1,0 +1,12 @@
+[package]
+name = "levi-hub"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "levi-hub"
+path = "src/main.rs"
+
+[dependencies]
+levi-core = { workspace = true }
+anyhow = { workspace = true }
