@@ -34,7 +34,7 @@ mod tests {
             labels: vec!["x".into()],
             created_by_dev: "d@e".into(),
             created_by_machine: "m".into(),
-            created_at: "2026-07-18T00:00:00Z".into(),
+            created: "2026-07-18T00:00:00Z".into(),
         };
         let ev = MEvent::from_item(&t, MEventType::SET, "m");
         let mut buf = Vec::new();

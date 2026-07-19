@@ -31,7 +31,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
             json!({
                 "to": match c.to_status { levi_core::StatusKind::Closed => "closed", levi_core::StatusKind::Reopened => "reopened" },
                 "anchor": c.anchor_commit,
-                "at": c.at,
+                "at": c.created,
                 "by": c.by_dev,
                 "applies_here": applies,
             })
@@ -43,7 +43,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         .comments
         .iter()
         .filter(|c| *c.task_id == task_id)
-        .map(|c| json!({"body": c.body, "by": c.by_dev, "at": c.at}))
+        .map(|c| json!({"body": c.body, "by": c.by_dev, "at": c.created}))
         .collect();
 
     let mut statuses_cache = std::collections::BTreeMap::new();
@@ -97,7 +97,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 "resolution": resolved.resolution.label(),
                 "priority": task.priority.label(),
                 "labels": task.labels,
-                "created_at": task.created_at,
+                "created_at": task.created,
                 "created_by": task.created_by_dev,
                 "claim": claim,
                 "blocked_by": blocked_by,

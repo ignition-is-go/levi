@@ -25,10 +25,15 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
     let session = HubSession::connect(&addr, Duration::from_secs(10))?;
 
     // History size first: everything up to this count is history, not news.
-    // (GetAll* + client-side filter — see hub_client::log_entries for why.)
-    let history: levi_core::LogEntryCount =
-        session.report_once(levi_core::CountAllLogEntrys {}, Duration::from_secs(10))?;
-    let cell = session.client.watch_query(levi_core::GetAllLogEntrys {});
+    let mut filter = levi_core::PartialLogEntry::default();
+    filter.project_id = Some(project_id.clone());
+    let history: levi_core::LogEntryCount = session.report_once(
+        levi_core::CountLogEntrys(filter.clone()),
+        Duration::from_secs(10),
+    )?;
+    let cell = session
+        .client
+        .watch_query(levi_core::GetLogEntrysByQuery(filter));
 
     let (tx, rx) = mpsc::channel();
     let _guard = cell.subscribe(move |sig| {
@@ -54,7 +59,7 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
             .filter(|e| !seen.contains(&*e.id.0))
             .cloned()
             .collect();
-        batch.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        batch.sort_by(|a, b| a.created.cmp(&b.created));
         for entry in batch {
             seen.insert(entry.id.to_string());
             if entry.project_id != project_id {

@@ -49,7 +49,7 @@ impl World {
     /// The claim on this task, if it exists and its ttl has not expired.
     pub fn live_claim(&self, task_id: &str, now: DateTime<Utc>) -> Option<&Claim> {
         let claim = self.claims.get(task_id)?;
-        let at = DateTime::parse_from_rfc3339(&claim.at)
+        let at = DateTime::parse_from_rfc3339(&claim.created)
             .ok()?
             .with_timezone(&Utc);
         let ttl = Duration::seconds(i64::try_from(claim.ttl_secs).ok()?);
@@ -96,10 +96,10 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
 
     w.status_changes = status_changes.into_values().collect();
     w.status_changes
-        .sort_by(|a, b| (a.at.as_str(), &*a.id.0).cmp(&(b.at.as_str(), &*b.id.0)));
+        .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
     w.comments = comments.into_values().collect();
     w.comments
-        .sort_by(|a, b| (a.at.as_str(), &*a.id.0).cmp(&(b.at.as_str(), &*b.id.0)));
+        .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
     w
 }
 
@@ -156,7 +156,7 @@ mod tests {
             labels: vec![],
             created_by_dev: "d".into(),
             created_by_machine: "m".into(),
-            created_at: "2026-07-01T00:00:00Z".into(),
+            created: "2026-07-01T00:00:00Z".into(),
         }
     }
 
@@ -204,7 +204,7 @@ mod tests {
             dev: "d".into(),
             machine: "m".into(),
             worktree: "/w".into(),
-            at: "2026-07-01T00:00:00Z".into(),
+            created: "2026-07-01T00:00:00Z".into(),
             ttl_secs: 3600,
         };
         let w = materialize(vec![rec("aa", &c, "2026-07-01T00:00:00Z")]);
@@ -219,7 +219,7 @@ mod tests {
         let p = Project {
             id: "p".into(),
             name: "levi".into(),
-            created_at: "2026-07-01T00:00:00Z".into(),
+            created: "2026-07-01T00:00:00Z".into(),
         };
         let c2 = Comment {
             id: "c2".into(),
@@ -227,7 +227,7 @@ mod tests {
             task_id: "t1".into(),
             body: "second".into(),
             by_dev: "d".into(),
-            at: "2026-07-02T00:00:00Z".into(),
+            created: "2026-07-02T00:00:00Z".into(),
         };
         let c1 = Comment {
             id: "c1".into(),
@@ -235,7 +235,7 @@ mod tests {
             task_id: "t1".into(),
             body: "first".into(),
             by_dev: "d".into(),
-            at: "2026-07-01T00:00:00Z".into(),
+            created: "2026-07-01T00:00:00Z".into(),
         };
         let w = materialize(vec![
             rec("cc", &c2, "2026-07-02T00:00:00Z"),

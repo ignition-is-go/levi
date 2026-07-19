@@ -10,6 +10,6 @@ pub struct Claim {
     pub machine: String,
     pub worktree: String,
     /// RFC3339
-    pub at: String,
+    pub created: String,
     pub ttl_secs: u64,
 }

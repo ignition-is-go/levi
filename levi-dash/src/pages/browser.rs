@@ -82,8 +82,7 @@ pub fn Browser() -> impl IntoView {
             .cloned()
             .collect();
         rows.sort_by(|a, b| {
-            (a.priority.rank(), a.created_at.as_str())
-                .cmp(&(b.priority.rank(), b.created_at.as_str()))
+            (a.priority.rank(), a.created.as_str()).cmp(&(b.priority.rank(), b.created.as_str()))
         });
         rows.into_iter()
             .map(|task| {
@@ -124,7 +123,7 @@ pub fn Browser() -> impl IntoView {
             .filter(|c| *c.task_id == task_id)
             .cloned()
             .collect();
-        task_comments.sort_by(|a, b| a.at.cmp(&b.at));
+        task_comments.sort_by(|a, b| a.created.cmp(&b.created));
         let deps_now = deps.get();
         let blocked_by: Vec<String> = deps_now
             .iter()
@@ -142,14 +141,14 @@ pub fn Browser() -> impl IntoView {
             .filter(|c| *c.task_id == task_id)
             .cloned()
             .collect();
-        history.sort_by(|a, b| (a.at.as_str(), &*a.id.0).cmp(&(b.at.as_str(), &*b.id.0)));
+        history.sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
 
         Some(view! {
             <div class="drawer">
                 <button class="close" on:click=move |_| drawer.set(None)>"✕"</button>
                 <h2>{task.title.clone()}</h2>
                 <div class="muted">{format!("{} · created {} by {}", task.priority.label(),
-                    task.created_at.get(..10).unwrap_or(""), task.created_by_dev)}</div>
+                    task.created.get(..10).unwrap_or(""), task.created_by_dev)}</div>
                 {(!task.body.is_empty()).then(|| view! { <div class="section">{task.body.clone()}</div> })}
                 {(!blocked_by.is_empty()).then(|| view! {
                     <div class="section"><h4>"blocked by"</h4>{blocked_by.join(", ")}</div>
@@ -174,7 +173,7 @@ pub fn Browser() -> impl IntoView {
                                         StatusKind::Reopened => "reopened",
                                     }}</span>
                                     <span class="muted">{format!("{}{anchor} by {}",
-                                        change.at.get(..19).unwrap_or(""), change.by_dev)}</span>
+                                        change.created.get(..19).unwrap_or(""), change.by_dev)}</span>
                                 </div>
                             }
                         })
@@ -187,7 +186,7 @@ pub fn Browser() -> impl IntoView {
                         .map(|comment| {
                             view! {
                                 <div class="row">
-                                    <span class="muted">{format!("{} {}", comment.at.get(..19).unwrap_or(""), comment.by_dev)}</span>
+                                    <span class="muted">{format!("{} {}", comment.created.get(..19).unwrap_or(""), comment.by_dev)}</span>
                                     <span>{comment.body.clone()}</span>
                                 </div>
                             }

@@ -26,7 +26,7 @@ pub fn statuses(
         .map(|c| &**c)
         .filter(|c| c.project_id == project_id)
         .collect();
-    sorted.sort_by(|a, b| (a.at.as_str(), &*a.id.0).cmp(&(b.at.as_str(), &*b.id.0)));
+    sorted.sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
 
     let mut anc = head.map(|h| FactsAncestors::new(&fact_map, h));
     tasks
@@ -66,7 +66,7 @@ pub fn now_ms() -> f64 {
 
 /// Is this claim still live? (at + ttl vs the browser clock.)
 pub fn claim_live(claim: &levi_core::Claim) -> bool {
-    let Ok(at) = chrono::DateTime::parse_from_rfc3339(&claim.at) else {
+    let Ok(at) = chrono::DateTime::parse_from_rfc3339(&claim.created) else {
         return false;
     };
     let expires_ms = at.timestamp_millis() as f64 + (claim.ttl_secs as f64) * 1000.0;

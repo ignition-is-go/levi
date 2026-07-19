@@ -18,7 +18,7 @@ pub struct StatusChange {
     #[serde(default)]
     pub anchor_commit: Option<String>,
     /// RFC3339
-    pub at: String,
+    pub created: String,
     pub by_dev: String,
     pub by_machine: String,
 }

@@ -13,7 +13,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, text: &str) -> Result<()> {
         task_id: task_id.clone(),
         body: text.to_string(),
         by_dev: ctx.identity.dev.clone(),
-        at: LeviCtx::now(),
+        created: LeviCtx::now(),
     };
     ctx.append_and_sync(vec![ctx.set_event(&comment)])?;
     println!("commented on {}", short_id(&ctx.world, &task_id));

@@ -33,7 +33,7 @@ pub fn run(
         labels,
         created_by_dev: ctx.identity.dev.clone(),
         created_by_machine: ctx.identity.machine.clone(),
-        created_at: LeviCtx::now(),
+        created: LeviCtx::now(),
     };
     let task_id = task.id.to_string();
     let mut events = vec![ctx.set_event(&task)];

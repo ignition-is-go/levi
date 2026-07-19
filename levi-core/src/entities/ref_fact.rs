@@ -9,7 +9,7 @@ pub struct RefFact {
     /// Head commit sha (hex).
     pub head: String,
     /// RFC3339
-    pub observed_at: String,
+    pub observed: String,
 }
 
 pub fn ref_fact_id(project_id: &str, branch: &str) -> String {

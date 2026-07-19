@@ -6,5 +6,5 @@ use myko::prelude::*;
 pub struct Project {
     pub name: String,
     /// RFC3339
-    pub created_at: String,
+    pub created: String,
 }

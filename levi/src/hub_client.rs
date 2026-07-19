@@ -114,26 +114,21 @@ impl HubSession {
         }
     }
 
-    /// This project's LogEntries as the hub currently knows them.
-    ///
-    /// NOTE: remote `Get*ByQuery` can't be used for entities with a
-    /// `created_at` field (myko 4.24): `QueryRequest` flattens the query
-    /// beside its own camelCase `createdAt`, and `Partial*` serializes `None`
-    /// as an explicit `null` that clobbers it, so the server-side parse
-    /// fails. Fetch everything with the unfiltered count as the arrival
-    /// marker and filter here until myko skips nulls in Partial serialization.
+    /// This project's LogEntries as the hub currently knows them: the count
+    /// report is the "hub has answered" marker, then the ByQuery cell catches
+    /// up to it. (levi entity fields deliberately avoid the wire keys
+    /// `QueryRequest` flattens beside the query — `createdAt`/`tx` — which is
+    /// why entities use `created`, not `created_at`.)
     pub fn log_entries(
         &self,
         project_id: &str,
         timeout: Duration,
     ) -> Result<Vec<Arc<levi_core::LogEntry>>> {
+        let mut filter = levi_core::PartialLogEntry::default();
+        filter.project_id = Some(project_id.to_string());
         let count: levi_core::LogEntryCount =
-            self.report_once(levi_core::CountAllLogEntrys {}, timeout)?;
-        let all = self.query_at_least(levi_core::GetAllLogEntrys {}, count.count, timeout)?;
-        Ok(all
-            .into_iter()
-            .filter(|e| e.project_id == project_id)
-            .collect())
+            self.report_once(levi_core::CountLogEntrys(filter.clone()), timeout)?;
+        self.query_at_least(levi_core::GetLogEntrysByQuery(filter), count.count, timeout)
     }
 
     /// Send events and barrier on a round-trip so they're processed before we

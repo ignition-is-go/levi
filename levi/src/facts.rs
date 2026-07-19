@@ -51,7 +51,7 @@ pub fn publish(ctx: &LeviCtx, session: &HubSession) -> Result<usize> {
                     project_id: project_id.clone(),
                     branch,
                     head: head.to_string(),
-                    observed_at: LeviCtx::now(),
+                    observed: LeviCtx::now(),
                 };
                 ref_facts.push(ctx.set_event(&fact));
             }

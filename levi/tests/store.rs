@@ -38,7 +38,7 @@ fn task_event(n: u32) -> MEvent {
         labels: vec![],
         created_by_dev: "d".into(),
         created_by_machine: "m".into(),
-        created_at: format!("2026-07-{:02}T00:00:00Z", 1 + n % 28),
+        created: format!("2026-07-{:02}T00:00:00Z", 1 + n % 28),
     };
     MEvent::from_item(&t, MEventType::SET, "m")
 }

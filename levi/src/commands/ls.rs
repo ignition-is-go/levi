@@ -78,7 +78,7 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
         })
         .collect();
     rows.sort_by(|a, b| {
-        (a.priority.rank(), a.created_at.as_str()).cmp(&(b.priority.rank(), b.created_at.as_str()))
+        (a.priority.rank(), a.created.as_str()).cmp(&(b.priority.rank(), b.created.as_str()))
     });
 
     warn_orphaned_anchors(ctx, rows.iter().map(|t| &*t.id.0));

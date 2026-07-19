@@ -61,7 +61,7 @@ pub fn InFlight() -> impl IntoView {
                                                                 view! {
                                                                     <div class="row" class:stale=!live>
                                                                         <span>{title(&claim.task_id)}</span>
-                                                                        <span class="muted">{claim.at.get(..19).unwrap_or("").to_string()}</span>
+                                                                        <span class="muted">{claim.created.get(..19).unwrap_or("").to_string()}</span>
                                                                         {(!live).then(|| view! { <span class="badge">"expired"</span> })}
                                                                     </div>
                                                                 }

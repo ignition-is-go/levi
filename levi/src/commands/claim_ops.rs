@@ -17,7 +17,7 @@ fn build_claim(ctx: &LeviCtx, task_id: &str, project_id: String) -> Claim {
         dev: ctx.identity.dev.clone(),
         machine: ctx.identity.machine.clone(),
         worktree: ctx.identity.worktree.clone(),
-        at: LeviCtx::now(),
+        created: LeviCtx::now(),
         ttl_secs: ctx.config.claim_ttl_secs,
     }
 }

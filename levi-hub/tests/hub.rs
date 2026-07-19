@@ -89,17 +89,17 @@ async fn log_entry_saga_unwraps_into_queryable_task() {
         labels: vec![],
         created_by_dev: "d@e".into(),
         created_by_machine: "m".into(),
-        created_at: "2026-07-18T00:00:00.000000Z".into(),
+        created: "2026-07-18T00:00:00.000000Z".into(),
     };
     let mut inner = MEvent::from_item(&task, MEventType::SET, "m");
-    inner.created_at = task.created_at.clone();
+    inner.created_at = task.created.clone();
     let mut cbor = Vec::new();
     ciborium::into_writer(&inner, &mut cbor).unwrap();
     let entry = LogEntry::wrap(
         "aabbccdd00112233aabbccdd00112233aabbccdd",
         "proj1",
         &cbor,
-        &task.created_at,
+        &task.created,
     );
 
     let _ = client.send_event(MEvent::from_item(&entry, MEventType::SET, "test"));

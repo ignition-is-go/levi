@@ -69,7 +69,7 @@ pub fn Overview() -> impl IntoView {
 
     let feed = move || {
         let mut entries = entries.get();
-        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        entries.sort_by(|a, b| b.created.cmp(&a.created));
         entries
             .into_iter()
             .take(25)
@@ -89,7 +89,7 @@ pub fn Overview() -> impl IntoView {
                     .unwrap_or_else(|_| "undecodable event".into());
                 view! {
                     <div class="row">
-                        <span class="muted">{entry.created_at.get(..19).unwrap_or("").to_string()}</span>
+                        <span class="muted">{entry.created.get(..19).unwrap_or("").to_string()}</span>
                         <span>{line}</span>
                     </div>
                 }

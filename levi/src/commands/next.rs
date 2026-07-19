@@ -47,7 +47,7 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
             dev: me.dev.clone(),
             machine: me.machine.clone(),
             worktree: me.worktree.clone(),
-            at: LeviCtx::now(),
+            created: LeviCtx::now(),
             ttl_secs: ctx.config.claim_ttl_secs,
         };
         let event = ctx.set_event(&claim_item);

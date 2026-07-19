@@ -22,7 +22,7 @@ pub fn run(ctx: &LeviCtx, name: Option<String>) -> Result<()> {
     let project = Project {
         id: uuid::Uuid::new_v4().simple().to_string().into(),
         name: name.clone(),
-        created_at: LeviCtx::now(),
+        created: LeviCtx::now(),
     };
     ctx.append_and_sync(vec![ctx.set_event(&project)])?;
     println!("initialized levi project '{name}' ({})", project.id.0);

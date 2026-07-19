@@ -25,7 +25,7 @@ pub struct RankedTask {
     pub task_id: String,
     pub priority: Priority,
     pub unblocks: usize,
-    pub created_at: String,
+    pub created: String,
     pub reason: String,
 }
 
@@ -90,7 +90,7 @@ pub fn rank_next(
             task_id: id.clone(),
             priority: task.priority,
             unblocks: transitive_unblocks(id, &blocks, &is_open),
-            created_at: task.created_at.clone(),
+            created: task.created.clone(),
             reason: String::new(),
         });
     }
@@ -99,13 +99,13 @@ pub fn rank_next(
         (
             a.priority.rank(),
             std::cmp::Reverse(a.unblocks),
-            a.created_at.as_str(),
+            a.created.as_str(),
             a.task_id.as_str(),
         )
             .cmp(&(
                 b.priority.rank(),
                 std::cmp::Reverse(b.unblocks),
-                b.created_at.as_str(),
+                b.created.as_str(),
                 b.task_id.as_str(),
             ))
     });
@@ -197,7 +197,7 @@ mod tests {
                     labels: vec![],
                     created_by_dev: "d".into(),
                     created_by_machine: "m".into(),
-                    created_at: created_at.to_string(),
+                    created: created_at.to_string(),
                 },
             );
             statuses.insert(
@@ -244,7 +244,7 @@ mod tests {
                 dev: dev.into(),
                 machine: machine.into(),
                 worktree: worktree.into(),
-                at: at.into(),
+                created: at.into(),
                 ttl_secs: 86400,
             },
         );

@@ -17,7 +17,7 @@ pub fn claim_json(world: &World, task_id: &str, now: DateTime<Utc>) -> Value {
     match world.live_claim(task_id, now) {
         Some(c) => json!({
             "dev": c.dev, "machine": c.machine, "worktree": c.worktree,
-            "at": c.at, "ttl_secs": c.ttl_secs,
+            "at": c.created, "ttl_secs": c.ttl_secs,
         }),
         None => Value::Null,
     }
@@ -33,7 +33,7 @@ pub fn task_json(world: &World, task: &Task, status: &ResolvedStatus, now: DateT
         "resolution": status.resolution.label(),
         "priority": task.priority.label(),
         "labels": task.labels,
-        "created_at": task.created_at,
+        "created_at": task.created,
         "created_by": task.created_by_dev,
         "claim": claim_json(world, &id, now),
     })

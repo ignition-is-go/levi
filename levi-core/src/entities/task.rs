@@ -58,5 +58,7 @@ pub struct Task {
     pub created_by_dev: String,
     pub created_by_machine: String,
     /// RFC3339
-    pub created_at: String,
+    // Named `created` (not created_at): a query-flattened field serializing
+    // as "createdAt" collides with QueryRequest's own timestamp on the wire.
+    pub created: String,
 }

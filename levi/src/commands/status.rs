@@ -55,7 +55,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, kind: StatusKind, opts: StatusOpts) ->
         task_id: task_id.clone(),
         to_status: kind,
         anchor_commit: anchor_commit.clone(),
-        at: LeviCtx::now(),
+        created: LeviCtx::now(),
         by_dev: ctx.identity.dev.clone(),
         by_machine: ctx.identity.machine.clone(),
     };

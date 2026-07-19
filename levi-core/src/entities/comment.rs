@@ -9,5 +9,5 @@ pub struct Comment {
     pub body: String,
     pub by_dev: String,
     /// RFC3339
-    pub at: String,
+    pub created: String,
 }

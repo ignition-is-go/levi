@@ -226,7 +226,7 @@ mod tests {
             task_id: "t1".into(),
             to_status: kind,
             anchor_commit: anchor.map(str::to_string),
-            at: at.into(),
+            created: at.into(),
             by_dev: "d".into(),
             by_machine: "m".into(),
         }
@@ -234,7 +234,7 @@ mod tests {
 
     fn resolve(changes: &[StatusChange], anc: &mut impl AncestorSet) -> ResolvedStatus {
         let mut refs: Vec<&StatusChange> = changes.iter().collect();
-        refs.sort_by(|a, b| (a.at.as_str(), &*a.id.0).cmp(&(b.at.as_str(), &*b.id.0)));
+        refs.sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
         effective_status(&refs, anc, Resolution::Exact)
     }
 
