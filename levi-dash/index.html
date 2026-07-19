@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>levi</title>
+  <link data-trunk rel="rust" data-wasm-opt="z" />
+  <style>
+    :root {
+      --bg: #12141a; --panel: #1a1d26; --panel2: #222633; --text: #d7dae2;
+      --dim: #8a90a2; --accent: #7aa2f7; --open: #9ece6a; --closed: #565f89;
+      --p0: #f7768e; --p1: #e0af68; --warn: #e0af68; --border: #2a2f3d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 14px/1.5 "SF Mono", ui-monospace, Menlo, monospace; }
+    header { display: flex; align-items: center; gap: 1.5rem; padding: .8rem 1.2rem;
+             background: var(--panel); border-bottom: 1px solid var(--border); }
+    header h1 { font-size: 1rem; margin: 0; color: var(--accent); }
+    nav button { background: none; border: none; color: var(--dim); font: inherit;
+                 cursor: pointer; padding: .3rem .6rem; border-radius: 4px; }
+    nav button.active { color: var(--text); background: var(--panel2); }
+    .conn { margin-left: auto; font-size: .8rem; }
+    .conn.ok { color: var(--open); } .conn.bad { color: var(--p0); }
+    main { padding: 1.2rem; max-width: 1100px; margin: 0 auto; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .card h3 { margin: 0 0 .5rem; font-size: .95rem; }
+    .muted { color: var(--dim); } .num { font-size: 1.6rem; font-weight: 600; }
+    .open { color: var(--open); } .closed { color: var(--closed); }
+    .p0 { color: var(--p0); font-weight: 600; } .p1 { color: var(--p1); }
+    .row { display: flex; gap: .8rem; align-items: baseline; padding: .35rem .5rem;
+           border-radius: 4px; cursor: default; }
+    .row:hover { background: var(--panel2); }
+    .row.clickable { cursor: pointer; }
+    .badge { font-size: .75rem; padding: 0 .45rem; border-radius: 8px;
+             border: 1px solid var(--border); color: var(--dim); }
+    .feed { margin-top: 1.5rem; }
+    .feed .row { font-size: .85rem; }
+    select, input { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+                    border-radius: 4px; padding: .3rem .5rem; font: inherit; }
+    .toolbar { display: flex; gap: .8rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .drawer { position: fixed; top: 0; right: 0; width: 420px; height: 100vh; overflow-y: auto;
+              background: var(--panel); border-left: 1px solid var(--border); padding: 1.2rem;
+              box-shadow: -8px 0 24px rgba(0,0,0,.4); }
+    .drawer h2 { margin-top: 0; font-size: 1.05rem; }
+    .drawer .close { float: right; cursor: pointer; color: var(--dim); background: none;
+                     border: none; font: inherit; font-size: 1.2rem; }
+    .section { margin-top: 1rem; } .section h4 { margin: 0 0 .3rem; color: var(--dim);
+               font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+    .group { margin-bottom: 1.2rem; }
+    .group > .head { color: var(--accent); margin-bottom: .3rem; }
+    .indent { margin-left: 1.2rem; }
+    .stale { opacity: .45; }
+    .warn { color: var(--warn); }
+  </style>
+</head>
+<body></body>
+</html>
