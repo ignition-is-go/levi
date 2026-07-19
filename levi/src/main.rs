@@ -13,7 +13,7 @@ fn main() {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
-    let ctx = LeviCtx::load(cli.no_sync)?;
+    let mut ctx = LeviCtx::load(cli.no_sync)?;
     match cli.cmd {
         Cmd::Init { name } => commands::init::run(&ctx, name),
         Cmd::Add { title, priority, body, labels, deps, json } => {
@@ -35,14 +35,18 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             StatusKind::Reopened,
             commands::status::StatusOpts { anchor, no_anchor, force },
         ),
-        Cmd::Next { .. }
-        | Cmd::Start { .. }
-        | Cmd::Steal { .. }
-        | Cmd::Drop { .. }
-        | Cmd::Dep { .. }
-        | Cmd::Comment { .. }
-        | Cmd::Edit { .. }
-        | Cmd::Sync { .. }
-        | Cmd::Watch { .. } => anyhow::bail!("not implemented yet"),
+        Cmd::Next { claim, count, json } => commands::next::run(&mut ctx, claim, count, json),
+        Cmd::Start { id } => commands::claim_ops::start(&ctx, &id),
+        Cmd::Steal { id } => commands::claim_ops::steal(&ctx, &id),
+        Cmd::Drop { id } => commands::claim_ops::drop(&ctx, &id),
+        Cmd::Dep { cmd } => match cmd {
+            levi::cli::DepCmd::Add { blocked, on } => commands::dep::add(&ctx, &blocked, &on),
+            levi::cli::DepCmd::Rm { blocked, on } => commands::dep::rm(&ctx, &blocked, &on),
+        },
+        Cmd::Comment { id, text } => commands::comment::run(&ctx, &id, &text),
+        Cmd::Edit { id, priority, title, labels, body } => {
+            commands::edit::run(&ctx, &id, priority, title, labels, body)
+        }
+        Cmd::Sync { .. } | Cmd::Watch { .. } => anyhow::bail!("not implemented yet"),
     }
 }

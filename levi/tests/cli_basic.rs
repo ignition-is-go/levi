@@ -72,6 +72,47 @@ fn uninitialized_repo_gives_guidance() {
 }
 
 #[test]
+fn dep_comment_edit_flow() {
+    let repo = TestRepo::new();
+    repo.init();
+    let a = repo.add("a", &[]);
+    let b = repo.add("b", &[]);
+
+    repo.levi_ok(&["dep", "add", &b, "--on", &a]);
+    let show = repo.levi_json(&["show", &b, "--json"]);
+    assert_eq!(show["blocked_by"][0]["id"].as_str().unwrap(), a);
+
+    // Idempotent add; cycle add warns but succeeds.
+    repo.levi_ok(&["dep", "add", &b, "--on", &a]);
+    repo.levi(&["dep", "add", &a, "--on", &b])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("cycle"));
+    repo.levi_ok(&["dep", "rm", &a, "--on", &b]);
+    repo.levi_ok(&["dep", "rm", &b, "--on", &a]);
+    let show = repo.levi_json(&["show", &b, "--json"]);
+    assert_eq!(show["blocked_by"].as_array().unwrap().len(), 0);
+    repo.levi(&["dep", "rm", &b, "--on", &a]).assert().failure();
+    repo.levi(&["dep", "add", &a, "--on", &a]).assert().failure().stderr(predicate::str::contains("itself"));
+
+    repo.levi_ok(&["comment", &a, "first note"]);
+    repo.levi_ok(&["comment", &a, "second note"]);
+    let show = repo.levi_json(&["show", &a, "--json"]);
+    let comments = show["comments"].as_array().unwrap();
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0]["body"], "first note");
+
+    repo.levi_ok(&["edit", &a, "-p", "p0", "--title", "renamed", "-l", "+urgent", "-l", "+web"]);
+    repo.levi_ok(&["edit", &a, "-l", "-web"]);
+    let show = repo.levi_json(&["show", &a, "--json"]);
+    assert_eq!(show["priority"], "P0");
+    assert_eq!(show["title"], "renamed");
+    assert_eq!(show["labels"].as_array().unwrap().len(), 1);
+    assert_eq!(show["labels"][0], "urgent");
+    repo.levi(&["edit", &a]).assert().failure().stderr(predicate::str::contains("nothing to edit"));
+}
+
+#[test]
 fn add_with_dep_links_tasks() {
     let repo = TestRepo::new();
     repo.init();

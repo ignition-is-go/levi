@@ -69,8 +69,27 @@ impl EventStore {
     /// Append events; returns their ids (blob OIDs). Compare-and-swap with
     /// bounded retries; safe against concurrent invocations.
     pub fn append(&self, events: &[MEvent]) -> anyhow::Result<Vec<String>> {
+        Ok(self
+            .append_if(events, |_| true)?
+            .expect("append_if with a true precondition always appends"))
+    }
+
+    /// Atomic check-then-append: under the mutation lock, re-read the log and
+    /// run `check` on it; only append when it returns true. This is what makes
+    /// `levi next --claim` atomic on one machine (spec §CLI surface): the
+    /// precondition ("no live foreign claim") and the claim append happen in
+    /// one critical section.
+    pub fn append_if(
+        &self,
+        events: &[MEvent],
+        check: impl FnOnce(&[EventRecord]) -> bool,
+    ) -> anyhow::Result<Option<Vec<String>>> {
         if events.is_empty() {
-            return Ok(Vec::new());
+            return Ok(Some(Vec::new()));
+        }
+        let _lock = self.mutation_lock()?;
+        if !check(&self.read()?) {
+            return Ok(None);
         }
         let mut new_ids = Vec::with_capacity(events.len());
         let mut blobs = Vec::with_capacity(events.len());
@@ -99,7 +118,7 @@ impl EventStore {
             let msg = format!("levi: {added} event(s)");
             Ok(Some(self.write_ref_commit(tree, old.into_iter().collect(), &msg)?))
         })?;
-        Ok(new_ids)
+        Ok(Some(new_ids))
     }
 
     /// Union-merge another events ref (e.g. `refs/levi/remotes/origin/events`)
@@ -115,6 +134,7 @@ impl EventStore {
     /// Union-merge the events reachable from `theirs` (a commit on some
     /// events ref) into our ref.
     pub fn merge_commit(&self, theirs: ObjectId) -> anyhow::Result<usize> {
+        let _lock = self.mutation_lock()?;
         let their_shards = self.load_shards(theirs)?;
         let mut new_count = 0usize;
         self.with_cas_retry(|old| {
@@ -176,11 +196,11 @@ impl EventStore {
 
     /// Run `build` against the current ref target and CAS the result in;
     /// `build` returning `None` means nothing to do. Retries on races.
+    /// Callers must hold the mutation lock (flock is not re-entrant).
     fn with_cas_retry(
         &self,
         mut build: impl FnMut(Option<ObjectId>) -> anyhow::Result<Option<ObjectId>>,
     ) -> anyhow::Result<()> {
-        let _lock = self.mutation_lock()?;
         let mut last_err: Option<anyhow::Error> = None;
         for attempt in 0..MAX_CAS_RETRIES {
             if attempt > 0 {
