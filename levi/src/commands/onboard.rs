@@ -40,6 +40,11 @@ it when parsing.\n\
   `levi comment <id> \"text\"`.\n\
 - Sync is opportunistic after every mutation; `levi sync` forces a full\n\
   git-remote + hub exchange.\n\
+- **Cross-project**: file upstream bugs with `levi add --project <name>\n\
+  \"title\"`; link with `levi dep add <id> --on <project>/lv-xxxx --via\n\
+  \"<how this repo consumes that project>\"`. When a foreign blocker\n\
+  closes, verify the fix is actually reachable through the `via`\n\
+  mechanism (published release, updated pin, ...) before starting work.\n\
 {END}"
     )
 }

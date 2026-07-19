@@ -32,6 +32,11 @@ impl LeviCtx {
         let identity = detect_identity(store.repo())?;
         let config = LeviConfig::load(store.repo());
         let world = materialize(store.read()?);
+        // Opportunistic sibling registration: any repo levi has run in is
+        // findable as a sibling checkout from every other repo.
+        if let (Some(project), Some(workdir)) = (&world.project, store.repo().workdir()) {
+            crate::state::register_checkout(&project.id.0, workdir);
+        }
         Ok(Self {
             store,
             world,
@@ -146,6 +151,7 @@ fn detect_identity(repo: &gix::Repository) -> Result<Identity> {
         .ok()
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "unknown-host".into());
+    let machine_id = crate::state::machine_id();
     let worktree = match repo.workdir() {
         Some(wd) => wd.canonicalize().unwrap_or_else(|_| wd.to_path_buf()),
         None => repo.git_dir().to_path_buf(),
@@ -153,6 +159,7 @@ fn detect_identity(repo: &gix::Repository) -> Result<Identity> {
     Ok(Identity {
         dev,
         machine,
+        machine_id,
         worktree: worktree.display().to_string(),
     })
 }

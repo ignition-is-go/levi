@@ -46,6 +46,7 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
             task_id: task_id.clone(),
             dev: me.dev.clone(),
             machine: me.machine.clone(),
+            machine_id: me.machine_id.clone(),
             worktree: me.worktree.clone(),
             created: LeviCtx::now(),
             ttl_secs: ctx.config.claim_ttl_secs,
@@ -77,7 +78,7 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
             }
             match world.live_claim(&task_id, now) {
                 None => true,
-                Some(c) => c.dev == me.dev && c.machine == me.machine && c.worktree == me.worktree,
+                Some(c) => levi_core::rank::claim_is(c, &me),
             }
         })?;
         ctx.reload()?;
@@ -96,7 +97,15 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
 fn rank(ctx: &LeviCtx) -> Result<Vec<RankedTask>> {
     let mut anc = ctx.ancestors_for(None)?;
     let statuses = ctx.statuses(&mut anc, Resolution::Exact);
-    Ok(rank_next(&ctx.world, &statuses, Utc::now(), &ctx.identity))
+    let ladder = crate::foreign::resolve_ladder(ctx);
+    let foreign = crate::foreign::status_map(&ladder);
+    Ok(rank_next(
+        &ctx.world,
+        &statuses,
+        &foreign,
+        Utc::now(),
+        &ctx.identity,
+    ))
 }
 
 fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
@@ -111,13 +120,46 @@ fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
             &tips,
         )
     };
+    let ladder = crate::foreign::resolve_ladder(ctx);
     // "Fix exists elsewhere" belongs in the reason an agent acts on: merging
-    // an existing fix beats re-implementing it (lv-98bf).
+    // an existing fix beats re-implementing it (lv-98bf). Likewise a
+    // cross-project blocker that just closed: the agent must verify the fix
+    // is reachable through the recorded `via` mechanism before starting.
     let full_reason = |r: &RankedTask, elsewhere: &[crate::ancestors::ElsewhereClose]| {
-        match crate::output::elsewhere_hint(elsewhere) {
+        let mut reason = match crate::output::elsewhere_hint(elsewhere) {
             Some(hint) => format!("{}; note: {hint} — consider merging it", r.reason),
             None => r.reason.clone(),
+        };
+        for dep in ctx.world.deps.values() {
+            if *dep.blocked_task_id != r.task_id {
+                continue;
+            }
+            let Some(blocker_project) = &dep.blocker_project_id else {
+                continue;
+            };
+            let key = levi_core::foreign_key(blocker_project, &dep.blocker_task_id);
+            if let Some(info) = ladder.get(&key)
+                && info.status == levi_core::resolve::Status::Closed
+            {
+                let observed = info
+                    .observed
+                    .as_deref()
+                    .map(|o| format!(" as of {}", &o[..16.min(o.len())]))
+                    .unwrap_or_default();
+                let via = dep
+                    .via
+                    .as_deref()
+                    .map(|v| format!(" — verify availability via: {v}"))
+                    .unwrap_or_default();
+                reason.push_str(&format!(
+                    "; blocker {}/lv-{} closed ({}{observed}){via}",
+                    &blocker_project[..8.min(blocker_project.len())],
+                    &dep.blocker_task_id[..4.min(dep.blocker_task_id.len())],
+                    info.resolution.label(),
+                ));
+            }
         }
+        reason
     };
 
     if json {

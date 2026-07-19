@@ -85,6 +85,11 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     // Facts leg (spec leg 3) rides the same session.
     let facts = crate::facts::publish(ctx, &world, &session)?;
 
+    // Foreign-status cache refresh (cross-project deps): the only place the
+    // ladder's rung-2 answers come from — `ls`/`next` never hit the network.
+    let foreign = crate::foreign::refresh_cache(ctx, &world, &session).unwrap_or(0);
+    let _ = foreign;
+
     session.close();
     Ok(Some(format!(
         "pushed {pushed}, pulled {pulled} event(s), published {facts} fact(s)"

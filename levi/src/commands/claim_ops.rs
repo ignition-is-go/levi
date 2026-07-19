@@ -16,6 +16,7 @@ fn build_claim(ctx: &LeviCtx, task_id: &str, project_id: String) -> Claim {
         task_id: task_id.into(),
         dev: ctx.identity.dev.clone(),
         machine: ctx.identity.machine.clone(),
+        machine_id: ctx.identity.machine_id.clone(),
         worktree: ctx.identity.worktree.clone(),
         created: LeviCtx::now(),
         ttl_secs: ctx.config.claim_ttl_secs,
@@ -36,7 +37,7 @@ pub fn start(ctx: &LeviCtx, id_input: &str) -> Result<()> {
         let world = materialize(records.to_vec());
         match world.live_claim(&task_id, now) {
             None => true,
-            Some(c) => c.dev == me.dev && c.machine == me.machine && c.worktree == me.worktree,
+            Some(c) => levi_core::rank::claim_is(c, &me),
         }
     })?;
     if appended.is_none() {
@@ -71,10 +72,7 @@ pub fn drop(ctx: &LeviCtx, id_input: &str) -> Result<()> {
     let Some(claim) = ctx.world.live_claim(&task_id, now) else {
         bail!("{short} is not claimed");
     };
-    if claim.dev != ctx.identity.dev
-        || claim.machine != ctx.identity.machine
-        || claim.worktree != ctx.identity.worktree
-    {
+    if !levi_core::rank::claim_is(claim, &ctx.identity) {
         bail!(
             "{short} is claimed by {} on {}, not you (use `levi steal {short}` to take it first)",
             claim.dev,

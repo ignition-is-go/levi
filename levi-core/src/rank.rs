@@ -17,7 +17,20 @@ use crate::resolve::{ResolvedStatus, Status};
 pub struct Identity {
     pub dev: String,
     pub machine: String,
+    /// Minted per-machine UUID (see levi's state layer). Empty = unknown.
+    pub machine_id: String,
     pub worktree: String,
+}
+
+/// Is this claim held by `me`? Compares by machine_id when both sides have
+/// one; falls back to the display name for legacy events (pre-machine-id).
+pub fn claim_is(claim: &crate::entities::Claim, me: &Identity) -> bool {
+    let machine_matches = if !claim.machine_id.is_empty() && !me.machine_id.is_empty() {
+        claim.machine_id == me.machine_id
+    } else {
+        claim.machine == me.machine
+    };
+    claim.dev == me.dev && machine_matches && claim.worktree == me.worktree
 }
 
 #[derive(Debug, Clone)]
@@ -30,10 +43,14 @@ pub struct RankedTask {
 }
 
 /// Rank all eligible tasks, best first. `statuses` must contain a resolved
-/// status for every task in `world`.
+/// status for every task in `world`; `foreign` maps
+/// "{project_id}/{task_id}" to the resolved status of cross-project
+/// blockers (missing key = unknown = still blocking, spec: never silently
+/// unblocked).
 pub fn rank_next(
     world: &World,
     statuses: &BTreeMap<String, ResolvedStatus>,
+    foreign: &BTreeMap<String, Status>,
     now: DateTime<Utc>,
     me: &Identity,
 ) -> Vec<RankedTask> {
@@ -48,11 +65,22 @@ pub fn rank_next(
     let mut blocks: HashMap<&str, Vec<&str>> = HashMap::new();
     // blocked -> blockers
     let mut blocked_by: HashMap<&str, Vec<&str>> = HashMap::new();
+    // blocked -> unmet cross-project blocker keys
+    let mut foreign_blocked: HashMap<&str, bool> = HashMap::new();
     for dep in world.deps.values() {
-        // Deps referencing deleted tasks are ignored.
-        if !world.tasks.contains_key(&*dep.blocker_task_id)
-            || !world.tasks.contains_key(&*dep.blocked_task_id)
-        {
+        if !world.tasks.contains_key(&*dep.blocked_task_id) {
+            continue;
+        }
+        if let Some(blocker_project) = &dep.blocker_project_id {
+            // Cross-project: satisfied iff the ladder says Closed.
+            let key = crate::entities::foreign_key(blocker_project, &dep.blocker_task_id);
+            let closed = foreign.get(&key) == Some(&Status::Closed);
+            let entry = foreign_blocked.entry(&dep.blocked_task_id).or_insert(false);
+            *entry |= !closed;
+            continue;
+        }
+        // Same-project deps referencing deleted tasks are ignored.
+        if !world.tasks.contains_key(&*dep.blocker_task_id) {
             continue;
         }
         blocks
@@ -76,6 +104,9 @@ pub fn rank_next(
             .map(|bs| bs.iter().all(|b| !is_open(b)))
             .unwrap_or(true);
         if !all_blockers_closed {
+            continue;
+        }
+        if foreign_blocked.get(id.as_str()).copied().unwrap_or(false) {
             continue;
         }
         if let Some(claim) = world.live_claim(id, now) {
@@ -174,6 +205,7 @@ mod tests {
         Identity {
             dev: "me@x".into(),
             machine: "m1".into(),
+            machine_id: String::new(),
             worktree: "/w1".into(),
         }
     }
@@ -220,6 +252,9 @@ mod tests {
                 project_id: "p".into(),
                 blocker_task_id: blocker.into(),
                 blocked_task_id: blocked.into(),
+                blocker_project_id: None,
+                blocker_ref: None,
+                via: None,
             },
         );
     }
@@ -244,6 +279,7 @@ mod tests {
                 dev: dev.into(),
                 machine: machine.into(),
                 worktree: worktree.into(),
+                machine_id: String::new(),
                 created: at.into(),
                 ttl_secs: 86400,
             },
@@ -261,7 +297,7 @@ mod tests {
         // aaaa unblocks two tasks; bbbb unblocks none but is P0.
         dep(&mut w, "aaaa", "cccc");
         dep(&mut w, "aaaa", "dddd");
-        let ranked = rank_next(&w, &statuses, now(), &me());
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
         assert_eq!(ranked[0].task_id, "bbbb");
         assert_eq!(ranked[1].task_id, "aaaa");
         assert!(ranked[0].reason.starts_with("P0"));
@@ -275,7 +311,7 @@ mod tests {
             ("cccc", Priority::P2, "2026-07-03T00:00:00Z"),
         ]);
         dep(&mut w, "bbbb", "cccc");
-        let ranked = rank_next(&w, &statuses, now(), &me());
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
         assert_eq!(ranked[0].task_id, "bbbb");
         assert!(ranked[0].reason.contains("unblocks 1 open task"));
     }
@@ -294,13 +330,13 @@ mod tests {
         dep(&mut w, "cccc", "aaaa");
         dep(&mut w, "aaaa", "dddd");
         close(&mut statuses, "dddd");
-        let ranked = rank_next(&w, &statuses, now(), &me());
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
         // Everything is blocked by an open blocker except… aaaa is blocked by
         // cccc (open), bbbb by aaaa (open), cccc by bbbb (open): cycle makes
         // all ineligible. Break it: close cccc.
         assert!(ranked.is_empty());
         close(&mut statuses, "cccc");
-        let ranked = rank_next(&w, &statuses, now(), &me());
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
         assert_eq!(ranked[0].task_id, "aaaa");
         // aaaa unblocks bbbb (open) transitively; cccc and dddd are closed.
         assert_eq!(ranked[0].unblocks, 1);
@@ -313,7 +349,7 @@ mod tests {
             ("bbbb", Priority::P0, "2026-07-02T00:00:00Z"),
         ]);
         dep(&mut w, "aaaa", "bbbb");
-        let ranked = rank_next(&w, &statuses, now(), &me());
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
         assert_eq!(
             ranked
                 .iter()
@@ -322,7 +358,7 @@ mod tests {
             ["aaaa"]
         );
         close(&mut statuses, "aaaa");
-        let ranked = rank_next(&w, &statuses, now(), &me());
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
         assert_eq!(ranked[0].task_id, "bbbb");
     }
 
@@ -350,7 +386,7 @@ mod tests {
             "/w2",
             "2026-07-01T00:00:00Z",
         ); // expired
-        let ranked: Vec<_> = rank_next(&w, &statuses, now(), &me())
+        let ranked: Vec<_> = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me())
             .into_iter()
             .map(|r| r.task_id)
             .collect();
@@ -383,5 +419,61 @@ mod tests {
             ("3f2a99ffeedd", Priority::P2, "2026-07-02T00:00:00Z"),
         ]);
         assert_eq!(short_id(&w, "3f2a99aabbcc"), "lv-3f2a99aa");
+    }
+
+    #[test]
+    fn foreign_dep_blocks_until_ladder_says_closed() {
+        let (mut w, statuses) = world_with(&[("aaaa", Priority::P0, "2026-07-01T00:00:00Z")]);
+        w.deps.insert(
+            "projB/ffff->aaaa".into(),
+            Dependency {
+                id: "projB/ffff->aaaa".into(),
+                project_id: "p".into(),
+                blocker_task_id: "ffff".into(),
+                blocked_task_id: "aaaa".into(),
+                blocker_project_id: Some("projB".into()),
+                blocker_ref: None,
+                via: Some("cargo: crates.io".into()),
+            },
+        );
+        // Unknown foreign status (missing key): blocked.
+        let ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
+        assert!(ranked.is_empty());
+        // Foreign open: still blocked.
+        let mut foreign = BTreeMap::new();
+        foreign.insert("projB/ffff".to_string(), Status::Open);
+        assert!(rank_next(&w, &statuses, &foreign, now(), &me()).is_empty());
+        // Foreign closed: eligible.
+        foreign.insert("projB/ffff".to_string(), Status::Closed);
+        let ranked = rank_next(&w, &statuses, &foreign, now(), &me());
+        assert_eq!(ranked[0].task_id, "aaaa");
+    }
+
+    #[test]
+    fn claim_is_prefers_machine_id_with_legacy_fallback() {
+        let claim = |machine: &str, machine_id: &str| Claim {
+            id: "t".into(),
+            project_id: "p".into(),
+            task_id: "t".into(),
+            dev: "me@x".into(),
+            machine: machine.into(),
+            machine_id: machine_id.into(),
+            worktree: "/w1".into(),
+            created: "2026-07-01T00:00:00Z".into(),
+            ttl_secs: 86400,
+        };
+        let me_with = |machine_id: &str| Identity {
+            dev: "me@x".into(),
+            machine: "m1".into(),
+            machine_id: machine_id.into(),
+            worktree: "/w1".into(),
+        };
+        // Both have ids: ids decide, names ignored.
+        assert!(claim_is(&claim("other-name", "id-1"), &me_with("id-1")));
+        assert!(!claim_is(&claim("m1", "id-2"), &me_with("id-1")));
+        // Either side legacy (empty id): display name decides.
+        assert!(claim_is(&claim("m1", ""), &me_with("id-1")));
+        assert!(claim_is(&claim("m1", "id-1"), &me_with("")));
+        assert!(!claim_is(&claim("m2", ""), &me_with("id-1")));
     }
 }

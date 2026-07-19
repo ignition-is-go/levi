@@ -99,6 +99,25 @@ tests over synthetic DAGs), CLI integration against scripted multi-branch /
 merge / rebase / worktree repos, concurrent CAS appends and parallel claims,
 and two-repo + in-process-hub sync convergence.
 
+## Cross-project
+
+File bugs upstream and block on them across repos — the hub relays:
+
+```sh
+levi add --project myko "Partial serializes None as explicit null" -p p2
+  # → myko/lv-7c21   (hub-acknowledged; lands in myko's repo on their next sync)
+levi comment myko/lv-7c21 "repro from our side: ..."
+levi dep add lv-ee52 --on myko/lv-7c21 --via "cargo: crates.io myko ^4.24"
+```
+
+A cross-project blocker resolves against how you actually consume the
+project: a sibling checkout on this machine wins (exact, offline — levi
+auto-registers every checkout it runs in), otherwise the hub's view of
+their default branch (cached at sync time; `ls`/`next` never wait on the
+network), otherwise unknown-means-blocked. The `--via` note travels with
+the dep so the agent that gets unblocked knows how to verify the fix is
+actually reachable (published release, updated pin, …) before starting.
+
 ## License
 
 AGPL-3.0-or-later, matching the [myko] framework it builds on.

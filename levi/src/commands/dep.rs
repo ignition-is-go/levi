@@ -6,9 +6,20 @@ use levi_core::{Dependency, dependency_id};
 
 use crate::ctx::LeviCtx;
 
-pub fn add(ctx: &LeviCtx, blocked_input: &str, blocker_input: &str) -> Result<()> {
+pub fn add(
+    ctx: &LeviCtx,
+    blocked_input: &str,
+    blocker_input: &str,
+    via: Option<String>,
+) -> Result<()> {
     let project_id = ctx.project_id()?;
     let blocked = resolve_prefix(&ctx.world, blocked_input)?.to_string();
+    if let Some(target) = crate::foreign::parse_target(blocker_input) {
+        return add_foreign(ctx, project_id, blocked, &target, via);
+    }
+    if via.is_some() {
+        bail!("--via is for cross-project deps (`--on project/lv-xxxx`)");
+    }
     let blocker = resolve_prefix(&ctx.world, blocker_input)?.to_string();
     if blocked == blocker {
         bail!("a task cannot block itself");
@@ -24,6 +35,9 @@ pub fn add(ctx: &LeviCtx, blocked_input: &str, blocker_input: &str) -> Result<()
         project_id,
         blocker_task_id: blocker.clone(),
         blocked_task_id: blocked.clone(),
+        blocker_project_id: None,
+        blocker_ref: None,
+        via: None,
     };
     ctx.append_and_sync(vec![ctx.set_event(&dep)])?;
     println!(
@@ -37,6 +51,9 @@ pub fn add(ctx: &LeviCtx, blocked_input: &str, blocker_input: &str) -> Result<()
 pub fn rm(ctx: &LeviCtx, blocked_input: &str, blocker_input: &str) -> Result<()> {
     ctx.project_id()?;
     let blocked = resolve_prefix(&ctx.world, blocked_input)?.to_string();
+    if let Some(target) = crate::foreign::parse_target(blocker_input) {
+        return rm_foreign(ctx, blocked, &target);
+    }
     let blocker = resolve_prefix(&ctx.world, blocker_input)?.to_string();
     let id = dependency_id(&blocker, &blocked);
     let Some(dep) = ctx.world.deps.get(&id) else {
@@ -78,4 +95,80 @@ fn would_cycle(ctx: &LeviCtx, blocker: &str, blocked: &str) -> bool {
         }
     }
     false
+}
+
+/// Cross-project dep: the event lives in the *blocked* task's project log
+/// only; the blocker is identified by (project id, task id) and resolved
+/// through the ladder from then on.
+fn add_foreign(
+    ctx: &LeviCtx,
+    project_id: String,
+    blocked: String,
+    target: &crate::foreign::ForeignTarget,
+    via: Option<String>,
+) -> Result<()> {
+    let (blocker_project, blocker_task, display) = match crate::foreign::offline_target(target) {
+        Some((p, t)) => (p.clone(), t, p),
+        None => {
+            let session = crate::foreign::connect(ctx)?;
+            let (pid, name) = crate::foreign::resolve_project(&session, &target.project)?;
+            let task = crate::foreign::resolve_foreign_task(&session, &pid, &target.task)?;
+            let out = (pid, task.id.to_string(), name);
+            session.close();
+            out
+        }
+    };
+    let dep = Dependency {
+        id: levi_core::foreign_dependency_id(&blocker_project, &blocker_task, &blocked).into(),
+        project_id,
+        blocker_task_id: blocker_task.clone(),
+        blocked_task_id: blocked.clone(),
+        blocker_project_id: Some(blocker_project),
+        blocker_ref: target.refname.clone(),
+        via,
+    };
+    ctx.append_and_sync(vec![ctx.set_event(&dep)])?;
+    println!(
+        "{} is blocked by {display}/lv-{}",
+        short_id(&ctx.world, &blocked),
+        &blocker_task[..4.min(blocker_task.len())]
+    );
+    Ok(())
+}
+
+fn rm_foreign(
+    ctx: &LeviCtx,
+    blocked: String,
+    target: &crate::foreign::ForeignTarget,
+) -> Result<()> {
+    // Find the dep by blocked + foreign task prefix (no hub needed).
+    let matches: Vec<_> = ctx
+        .world
+        .deps
+        .values()
+        .filter(|d| {
+            *d.blocked_task_id == blocked
+                && d.blocker_project_id.is_some()
+                && d.blocker_task_id.starts_with(&target.task)
+        })
+        .collect();
+    match matches.len() {
+        0 => bail!(
+            "{} has no matching cross-project dep",
+            short_id(&ctx.world, &blocked)
+        ),
+        1 => {
+            let dep = matches[0].clone();
+            ctx.append_and_sync(vec![ctx.del_event(&dep)])?;
+            println!(
+                "{} is no longer blocked by it",
+                short_id(&ctx.world, &blocked)
+            );
+            Ok(())
+        }
+        _ => bail!(
+            "'{}' matches multiple cross-project deps; use the full id",
+            target.task
+        ),
+    }
 }

@@ -69,11 +69,10 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
                 .map(|l| t.labels.contains(l))
                 .unwrap_or(true);
             let mine_ok = !opts.mine
-                || ctx.world.live_claim(id, now).is_some_and(|c| {
-                    c.dev == ctx.identity.dev
-                        && c.machine == ctx.identity.machine
-                        && c.worktree == ctx.identity.worktree
-                });
+                || ctx
+                    .world
+                    .live_claim(id, now)
+                    .is_some_and(|c| levi_core::rank::claim_is(c, &ctx.identity));
             status_ok && label_ok && mine_ok
         })
         .collect();

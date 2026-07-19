@@ -60,9 +60,33 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
             .clone()
     };
 
+    let ladder = crate::foreign::resolve_ladder(ctx);
     let mut blocked_by = Vec::new();
     let mut blocks = Vec::new();
     for dep in ctx.world.deps.values() {
+        // Cross-project blockers resolve through the ladder, not the world.
+        if *dep.blocked_task_id == task_id
+            && let Some(blocker_project) = &dep.blocker_project_id
+        {
+            let key = levi_core::foreign_key(blocker_project, &dep.blocker_task_id);
+            let info = ladder.get(&key);
+            blocked_by.push(json!({
+                "id": dep.blocker_task_id,
+                "project_id": blocker_project,
+                "short": format!(
+                    "{}/lv-{}",
+                    &blocker_project[..8.min(blocker_project.len())],
+                    &dep.blocker_task_id[..4.min(dep.blocker_task_id.len())]
+                ),
+                "title": info.and_then(|i| i.title.clone()),
+                "status": info.map(|i| i.status.label()).unwrap_or("open"),
+                "resolution": info.map(|i| i.resolution.label()).unwrap_or("partial"),
+                "observed": info.and_then(|i| i.observed.clone()),
+                "ref": dep.blocker_ref,
+                "via": dep.via,
+            }));
+            continue;
+        }
         if *dep.blocked_task_id == task_id && ctx.world.tasks.contains_key(&*dep.blocker_task_id) {
             let status = status_of(ctx, &mut anc, &dep.blocker_task_id);
             blocked_by.push(json!({

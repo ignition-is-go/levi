@@ -188,7 +188,22 @@ pub fn Browser() -> impl IntoView {
         let blocked_by: Vec<String> = deps_now
             .iter()
             .filter(|d| *d.blocked_task_id == task_id)
-            .map(|d| d.blocker_task_id[..8.min(d.blocker_task_id.len())].to_string())
+            .map(|d| {
+                let short = &d.blocker_task_id[..8.min(d.blocker_task_id.len())];
+                match &d.blocker_project_id {
+                    // Cross-project blocker: name the project and carry the
+                    // agent-authored consumption note.
+                    Some(project) => {
+                        let via = d
+                            .via
+                            .as_deref()
+                            .map(|v| format!(" (via: {v})"))
+                            .unwrap_or_default();
+                        format!("{}/{short}{via}", &project[..8.min(project.len())])
+                    }
+                    None => short.to_string(),
+                }
+            })
             .collect();
         let blocks: Vec<String> = deps_now
             .iter()
