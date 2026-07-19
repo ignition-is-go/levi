@@ -30,15 +30,23 @@ pub async fn serve(
     token: Option<String>,
     dash_dir: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let state = DoorState { token, internal_port };
-    let mut app = Router::new().route("/myko", get(ws_handler)).with_state(state);
+    let state = DoorState {
+        token,
+        internal_port,
+    };
+    let mut app = Router::new()
+        .route("/myko", get(ws_handler))
+        .with_state(state);
     app = match dash_dir {
         Some(dir) => {
             log::info!("serving dashboard from {}", dir.display());
             app.fallback_service(ServeDir::new(dir))
         }
         None => app.fallback(|| async {
-            (StatusCode::NOT_FOUND, "no dashboard built (start levi-hub with --dash-dir)")
+            (
+                StatusCode::NOT_FOUND,
+                "no dashboard built (start levi-hub with --dash-dir)",
+            )
         }),
     };
     let listener = tokio::net::TcpListener::bind(bind).await?;
@@ -65,7 +73,9 @@ async fn ws_handler(
 }
 
 fn authorized(state: &DoorState, query: &HashMap<String, String>, headers: &HeaderMap) -> bool {
-    let Some(expected) = &state.token else { return true };
+    let Some(expected) = &state.token else {
+        return true;
+    };
     if query.get("token") == Some(expected) {
         return true;
     }

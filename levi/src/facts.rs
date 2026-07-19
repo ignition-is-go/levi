@@ -71,8 +71,12 @@ pub fn publish(ctx: &LeviCtx, session: &HubSession) -> Result<usize> {
                 continue;
             }
             let sha = oid.to_string();
-            let Ok(object) = repo.find_object(oid) else { continue };
-            let Ok(commit) = object.try_into_commit() else { continue };
+            let Ok(object) = repo.find_object(oid) else {
+                continue;
+            };
+            let Ok(commit) = object.try_into_commit() else {
+                continue;
+            };
             let parents: Vec<ObjectId> = commit.parent_ids().map(|p| p.detach()).collect();
             if !published.contains(&sha) {
                 let fact = CommitFact {
@@ -98,8 +102,10 @@ pub fn publish(ctx: &LeviCtx, session: &HubSession) -> Result<usize> {
         if let Some(dir) = cache_path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if let Ok(mut f) =
-            std::fs::OpenOptions::new().create(true).append(true).open(&cache_path)
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&cache_path)
         {
             for sha in &new_shas {
                 let _ = writeln!(f, "{sha}");

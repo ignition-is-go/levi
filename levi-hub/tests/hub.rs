@@ -23,7 +23,11 @@ impl Drop for Hub {
 }
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn start_hub(token: Option<&str>) -> Hub {
@@ -73,7 +77,10 @@ async fn connect(client: &MykoClient, addr: String) -> bool {
         }
     });
     client.set_address(Some(addr));
-    tokio::time::timeout(Duration::from_secs(5), rx).await.map(|r| r.unwrap_or(false)).unwrap_or(false)
+    tokio::time::timeout(Duration::from_secs(5), rx)
+        .await
+        .map(|r| r.unwrap_or(false))
+        .unwrap_or(false)
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -94,7 +101,11 @@ async fn wrong_token_rejected_correct_token_accepted() {
     let ok =
         tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/myko?token=sekrit", hub.port))
             .await;
-    assert!(ok.is_ok(), "connection with correct token must succeed: {:?}", ok.err());
+    assert!(
+        ok.is_ok(),
+        "connection with correct token must succeed: {:?}",
+        ok.err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -102,7 +113,11 @@ async fn log_entry_saga_unwraps_into_queryable_task() {
     let hub = start_hub(Some("sekrit"));
     let client = MykoClient::new();
     assert!(
-        connect(&client, format!("ws://127.0.0.1:{}/myko?token=sekrit", hub.port)).await,
+        connect(
+            &client,
+            format!("ws://127.0.0.1:{}/myko?token=sekrit", hub.port)
+        )
+        .await,
         "client connects through the front door"
     );
 
@@ -122,9 +137,14 @@ async fn log_entry_saga_unwraps_into_queryable_task() {
     inner.created_at = task.created_at.clone();
     let mut cbor = Vec::new();
     ciborium::into_writer(&inner, &mut cbor).unwrap();
-    let entry = LogEntry::wrap("aabbccdd00112233aabbccdd00112233aabbccdd", "proj1", &cbor, &task.created_at);
+    let entry = LogEntry::wrap(
+        "aabbccdd00112233aabbccdd00112233aabbccdd",
+        "proj1",
+        &cbor,
+        &task.created_at,
+    );
 
-    client.send_event(MEvent::from_item(&entry, MEventType::SET, "test"));
+    let _ = client.send_event(MEvent::from_item(&entry, MEventType::SET, "test"));
 
     // The saga should apply the inner event; the task becomes queryable.
     let tasks = client.watch_query(levi_core::GetAllTasks {});
@@ -134,7 +154,10 @@ async fn log_entry_saga_unwraps_into_queryable_task() {
         if got.iter().any(|t| t.title == "hub roundtrip") {
             break;
         }
-        assert!(Instant::now() < deadline, "task never appeared via saga unwrap; got {got:?}");
+        assert!(
+            Instant::now() < deadline,
+            "task never appeared via saga unwrap; got {got:?}"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 

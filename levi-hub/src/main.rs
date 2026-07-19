@@ -42,9 +42,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let Cli { cmd } = Cli::parse();
     match cmd {
-        Cmd::Serve { bind, internal_port, dash_dir, token } => {
-            serve(bind, internal_port, dash_dir, token).await
-        }
+        Cmd::Serve {
+            bind,
+            internal_port,
+            dash_dir,
+            token,
+        } => serve(bind, internal_port, dash_dir, token).await,
     }
 }
 
@@ -55,13 +58,15 @@ async fn serve(
     token: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     levi_core::link();
-    let token = token.or_else(|| std::env::var("LEVI_HUB_TOKEN").ok()).filter(|t| !t.is_empty());
+    let token = token
+        .or_else(|| std::env::var("LEVI_HUB_TOKEN").ok())
+        .filter(|t| !t.is_empty());
     if token.is_none() {
         log::warn!("no token configured (--token / LEVI_HUB_TOKEN): hub is open");
     }
 
-    let mut builder = myko_server::CellServer::builder()
-        .with_bind_addr(([127, 0, 0, 1], internal_port).into());
+    let mut builder =
+        myko_server::CellServer::builder().with_bind_addr(([127, 0, 0, 1], internal_port).into());
     match myko_server::postgres::PostgresConfig::from_env() {
         Some(pg) => builder = builder.with_postgres(pg),
         None => log::warn!("MYKO_POSTGRES_URL not set: events are held in memory only"),

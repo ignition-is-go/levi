@@ -82,7 +82,8 @@ pub fn Browser() -> impl IntoView {
             .cloned()
             .collect();
         rows.sort_by(|a, b| {
-            (a.priority.rank(), a.created_at.as_str()).cmp(&(b.priority.rank(), b.created_at.as_str()))
+            (a.priority.rank(), a.created_at.as_str())
+                .cmp(&(b.priority.rank(), b.created_at.as_str()))
         });
         rows.into_iter()
             .map(|task| {
@@ -116,27 +117,31 @@ pub fn Browser() -> impl IntoView {
 
     let drawer_view = move || {
         let task_id = drawer.get()?;
-        let task = tasks.get().iter().find(|t| &*t.id.0 == task_id)?.clone();
+        let task = tasks.get().iter().find(|t| *t.id.0 == task_id)?.clone();
         let mut task_comments: Vec<_> = comments
             .get()
             .iter()
-            .filter(|c| &*c.task_id == task_id)
+            .filter(|c| *c.task_id == task_id)
             .cloned()
             .collect();
         task_comments.sort_by(|a, b| a.at.cmp(&b.at));
         let deps_now = deps.get();
         let blocked_by: Vec<String> = deps_now
             .iter()
-            .filter(|d| &*d.blocked_task_id == task_id)
+            .filter(|d| *d.blocked_task_id == task_id)
             .map(|d| d.blocker_task_id[..8.min(d.blocker_task_id.len())].to_string())
             .collect();
         let blocks: Vec<String> = deps_now
             .iter()
-            .filter(|d| &*d.blocker_task_id == task_id)
+            .filter(|d| *d.blocker_task_id == task_id)
             .map(|d| d.blocked_task_id[..8.min(d.blocked_task_id.len())].to_string())
             .collect();
-        let mut history: Vec<_> =
-            changes.get().iter().filter(|c| &*c.task_id == task_id).cloned().collect();
+        let mut history: Vec<_> = changes
+            .get()
+            .iter()
+            .filter(|c| *c.task_id == task_id)
+            .cloned()
+            .collect();
         history.sort_by(|a, b| (a.at.as_str(), &*a.id.0).cmp(&(b.at.as_str(), &*b.id.0)));
 
         Some(view! {

@@ -25,7 +25,12 @@ fn ranking_priority_then_unblocks_then_age() {
     assert_eq!(ids[1], unblocker);
     assert_eq!(ids[2], older);
     assert_eq!(ids.len(), 3);
-    assert!(next["tasks"][0]["reason"].as_str().unwrap().starts_with("P0"));
+    assert!(
+        next["tasks"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("P0")
+    );
 }
 
 #[test]
@@ -42,13 +47,23 @@ fn blocked_becomes_eligible_when_blocker_closes_on_this_branch() {
 
     // On side: blocked is eligible (blocker closed here).
     let next = repo.levi_json(&["next", "--json", "-n", "10"]);
-    let ids: Vec<_> = next["tasks"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect();
+    let ids: Vec<_> = next["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
     assert!(ids.contains(&blocked.as_str()));
 
     // On main: blocker still open -> blocked ineligible, blocker eligible.
     repo.checkout("main");
     let next = repo.levi_json(&["next", "--json", "-n", "10"]);
-    let ids: Vec<_> = next["tasks"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap().to_string()).collect();
+    let ids: Vec<_> = next["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap().to_string())
+        .collect();
     assert!(ids.contains(&blocker));
     assert!(!ids.contains(&blocked));
 }
@@ -69,10 +84,14 @@ fn claim_flow_start_steal_drop() {
     // unclaimed work? No: spec says eligible excludes only *foreign* claims,
     // so `a` is still eligible for us. Verify via ls --mine instead.
     let mine = repo.levi_json(&["ls", "--json", "--mine"]);
-    let mine_ids: Vec<_> =
-        mine["tasks"].as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect();
+    let mine_ids: Vec<_> = mine["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
     assert_eq!(mine_ids, vec![a.as_str()]);
-    assert!(second["tasks"].as_array().unwrap().len() >= 1);
+    assert!(!second["tasks"].as_array().unwrap().is_empty());
 
     // start on an already-claimed task fails (same identity claims are fine,
     // so exercise failure via a fake foreign claim: steal from another
@@ -84,7 +103,10 @@ fn claim_flow_start_steal_drop() {
     // steal always wins.
     repo.levi_ok(&["start", &b]);
     repo.levi_ok(&["steal", &b]);
-    repo.levi(&["drop", &a]).assert().failure().stderr(predicate::str::contains("not claimed"));
+    repo.levi(&["drop", &a])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not claimed"));
 }
 
 #[test]
@@ -100,14 +122,21 @@ fn foreign_claim_excludes_task_from_next() {
     repo.git(&["worktree", "add", "-q", &wt_str, "-b", "wtbranch"]);
     let wt = wt.canonicalize().unwrap();
     let out = repo.levi_in(wt.clone(), &["start", &a]).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     // From the main checkout, `a` is claimed by someone else: next -> b.
     let next = repo.levi_json(&["next", "--json"]);
     assert_eq!(next["tasks"][0]["id"].as_str().unwrap(), b);
 
     // start on it fails; steal takes it.
-    repo.levi(&["start", &a]).assert().failure().stderr(predicate::str::contains("already claimed"));
+    repo.levi(&["start", &a])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already claimed"));
     repo.levi_ok(&["steal", &a]);
     let next = repo.levi_json(&["next", "--json"]);
     assert_eq!(next["tasks"][0]["id"].as_str().unwrap(), a);
@@ -167,13 +196,21 @@ fn parallel_next_claim_yields_distinct_tasks() {
     let mut claimed = Vec::new();
     for child in children {
         let out = child.wait_with_output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         claimed.push(v["tasks"][0]["id"].as_str().unwrap().to_string());
     }
     claimed.sort();
     claimed.dedup();
-    assert_eq!(claimed.len(), 4, "each parallel agent must claim a distinct task");
+    assert_eq!(
+        claimed.len(),
+        4,
+        "each parallel agent must claim a distinct task"
+    );
     for wt in &worktrees {
         repo.git(&["worktree", "remove", "--force", &wt.to_string_lossy()]);
     }

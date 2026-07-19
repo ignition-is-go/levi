@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use gix::ObjectId;
-use levi_core::resolve::{Ancestry, AncestorSet};
+use levi_core::resolve::{AncestorSet, Ancestry};
 
 pub struct GixAncestors<'r> {
     repo: &'r gix::Repository,
@@ -22,7 +22,11 @@ impl<'r> GixAncestors<'r> {
 
     /// Resolve against an arbitrary head (e.g. a branch tip for `--branch`).
     pub fn at(repo: &'r gix::Repository, head: Option<ObjectId>) -> Self {
-        Self { repo, head, cache: HashMap::new() }
+        Self {
+            repo,
+            head,
+            cache: HashMap::new(),
+        }
     }
 
     fn lookup(&self, sha: &str) -> Ancestry {
@@ -76,8 +80,8 @@ pub fn orphaned_anchors(
 ) -> Vec<String> {
     // Collect ref tips once (branches, tags, remotes — not refs/levi/*).
     let mut tips: Vec<ObjectId> = Vec::new();
-    if let Ok(platform) = repo.references() {
-        if let Ok(iter) = platform.all() {
+    if let Ok(platform) = repo.references()
+        && let Ok(iter) = platform.all() {
             for reference in iter.flatten() {
                 let name = reference.name().as_bstr().to_string();
                 if name.starts_with("refs/levi/") {
@@ -89,14 +93,15 @@ pub fn orphaned_anchors(
                 }
             }
         }
-    }
     let mut orphaned = Vec::new();
     let mut seen = HashMap::new();
     for sha in anchors {
         if seen.contains_key(&sha) {
             continue;
         }
-        let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else { continue };
+        let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else {
+            continue;
+        };
         // Missing objects are "unfetched", not orphaned — different warning.
         if repo.try_find_object(anchor).ok().flatten().is_none() {
             seen.insert(sha, false);
@@ -104,7 +109,10 @@ pub fn orphaned_anchors(
         }
         let reachable = tips.iter().any(|tip| {
             *tip == anchor
-                || repo.merge_base(*tip, anchor).map(|b| b.detach() == anchor).unwrap_or(false)
+                || repo
+                    .merge_base(*tip, anchor)
+                    .map(|b| b.detach() == anchor)
+                    .unwrap_or(false)
         });
         seen.insert(sha.clone(), !reachable);
         if !reachable {

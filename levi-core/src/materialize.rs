@@ -49,7 +49,9 @@ impl World {
     /// The claim on this task, if it exists and its ttl has not expired.
     pub fn live_claim(&self, task_id: &str, now: DateTime<Utc>) -> Option<&Claim> {
         let claim = self.claims.get(task_id)?;
-        let at = DateTime::parse_from_rfc3339(&claim.at).ok()?.with_timezone(&Utc);
+        let at = DateTime::parse_from_rfc3339(&claim.at)
+            .ok()?
+            .with_timezone(&Utc);
         let ttl = Duration::seconds(i64::try_from(claim.ttl_secs).ok()?);
         (at + ttl > now).then_some(claim)
     }
@@ -129,13 +131,19 @@ mod tests {
     fn rec<T: myko::prelude::Eventable>(oid: &str, item: &T, created_at: &str) -> EventRecord {
         let mut event = MEvent::from_item(item, MEventType::SET, "m");
         event.created_at = created_at.to_string();
-        EventRecord { id: oid.to_string(), event }
+        EventRecord {
+            id: oid.to_string(),
+            event,
+        }
     }
 
     fn del<T: myko::prelude::Eventable>(oid: &str, item: &T, created_at: &str) -> EventRecord {
         let mut event = MEvent::from_item(item, MEventType::DEL, "m");
         event.created_at = created_at.to_string();
-        EventRecord { id: oid.to_string(), event }
+        EventRecord {
+            id: oid.to_string(),
+            event,
+        }
     }
 
     fn task(id: &str, title: &str) -> Task {
@@ -208,9 +216,27 @@ mod tests {
 
     #[test]
     fn project_and_sorted_append_only_sets() {
-        let p = Project { id: "p".into(), name: "levi".into(), created_at: "2026-07-01T00:00:00Z".into() };
-        let c2 = Comment { id: "c2".into(), project_id: "p".into(), task_id: "t1".into(), body: "second".into(), by_dev: "d".into(), at: "2026-07-02T00:00:00Z".into() };
-        let c1 = Comment { id: "c1".into(), project_id: "p".into(), task_id: "t1".into(), body: "first".into(), by_dev: "d".into(), at: "2026-07-01T00:00:00Z".into() };
+        let p = Project {
+            id: "p".into(),
+            name: "levi".into(),
+            created_at: "2026-07-01T00:00:00Z".into(),
+        };
+        let c2 = Comment {
+            id: "c2".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            body: "second".into(),
+            by_dev: "d".into(),
+            at: "2026-07-02T00:00:00Z".into(),
+        };
+        let c1 = Comment {
+            id: "c1".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            body: "first".into(),
+            by_dev: "d".into(),
+            at: "2026-07-01T00:00:00Z".into(),
+        };
         let w = materialize(vec![
             rec("cc", &c2, "2026-07-02T00:00:00Z"),
             rec("aa", &p, "2026-07-01T00:00:00Z"),
@@ -225,7 +251,10 @@ mod tests {
     fn unknown_item_type_is_ignored() {
         let mut event = MEvent::from_item(&task("t1", "x"), MEventType::SET, "m");
         event.item_type = "FutureThing".into();
-        let w = materialize(vec![EventRecord { id: "aa".into(), event }]);
+        let w = materialize(vec![EventRecord {
+            id: "aa".into(),
+            event,
+        }]);
         assert!(w.tasks.is_empty());
     }
 }

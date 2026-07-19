@@ -37,8 +37,12 @@ pub fn rank_next(
     now: DateTime<Utc>,
     me: &Identity,
 ) -> Vec<RankedTask> {
-    let is_open =
-        |id: &str| statuses.get(id).map(|r| r.status == Status::Open).unwrap_or(false);
+    let is_open = |id: &str| {
+        statuses
+            .get(id)
+            .map(|r| r.status == Status::Open)
+            .unwrap_or(false)
+    };
 
     // blocker -> directly blocked open tasks
     let mut blocks: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -51,8 +55,14 @@ pub fn rank_next(
         {
             continue;
         }
-        blocks.entry(&dep.blocker_task_id).or_default().push(&dep.blocked_task_id);
-        blocked_by.entry(&dep.blocked_task_id).or_default().push(&dep.blocker_task_id);
+        blocks
+            .entry(&dep.blocker_task_id)
+            .or_default()
+            .push(&dep.blocked_task_id);
+        blocked_by
+            .entry(&dep.blocked_task_id)
+            .or_default()
+            .push(&dep.blocker_task_id);
     }
 
     let mut candidates: Vec<RankedTask> = Vec::new();
@@ -69,9 +79,8 @@ pub fn rank_next(
             continue;
         }
         if let Some(claim) = world.live_claim(id, now) {
-            let mine = claim.dev == me.dev
-                && claim.machine == me.machine
-                && claim.worktree == me.worktree;
+            let mine =
+                claim.dev == me.dev && claim.machine == me.machine && claim.worktree == me.worktree;
             if !mine {
                 continue;
             }
@@ -87,8 +96,18 @@ pub fn rank_next(
     }
 
     candidates.sort_by(|a, b| {
-        (a.priority.rank(), std::cmp::Reverse(a.unblocks), a.created_at.as_str(), a.task_id.as_str())
-            .cmp(&(b.priority.rank(), std::cmp::Reverse(b.unblocks), b.created_at.as_str(), b.task_id.as_str()))
+        (
+            a.priority.rank(),
+            std::cmp::Reverse(a.unblocks),
+            a.created_at.as_str(),
+            a.task_id.as_str(),
+        )
+            .cmp(&(
+                b.priority.rank(),
+                std::cmp::Reverse(b.unblocks),
+                b.created_at.as_str(),
+                b.task_id.as_str(),
+            ))
     });
 
     for (i, c) in candidates.iter_mut().enumerate() {
@@ -117,7 +136,7 @@ fn transitive_unblocks(
     is_open: &impl Fn(&str) -> bool,
 ) -> usize {
     let mut seen: HashSet<&str> = HashSet::new();
-    let mut stack: Vec<&str> = blocks.get(id).map(|v| v.clone()).unwrap_or_default();
+    let mut stack: Vec<&str> = blocks.get(id).cloned().unwrap_or_default();
     let mut count = 0;
     while let Some(next) = stack.pop() {
         if next == id || !seen.insert(next) {
@@ -148,11 +167,15 @@ fn ordinal(n: usize) -> String {
 mod tests {
     use super::*;
     use crate::entities::*;
-    use crate::ids::{resolve_prefix, short_id, PrefixError};
+    use crate::ids::{PrefixError, resolve_prefix, short_id};
     use crate::resolve::Resolution;
 
     fn me() -> Identity {
-        Identity { dev: "me@x".into(), machine: "m1".into(), worktree: "/w1".into() }
+        Identity {
+            dev: "me@x".into(),
+            machine: "m1".into(),
+            worktree: "/w1".into(),
+        }
     }
 
     fn now() -> DateTime<Utc> {
@@ -179,7 +202,10 @@ mod tests {
             );
             statuses.insert(
                 id.to_string(),
-                ResolvedStatus { status: Status::Open, resolution: Resolution::Exact },
+                ResolvedStatus {
+                    status: Status::Open,
+                    resolution: Resolution::Exact,
+                },
             );
         }
         (w, statuses)
@@ -201,7 +227,10 @@ mod tests {
     fn close(statuses: &mut BTreeMap<String, ResolvedStatus>, id: &str) {
         statuses.insert(
             id.to_string(),
-            ResolvedStatus { status: Status::Closed, resolution: Resolution::Exact },
+            ResolvedStatus {
+                status: Status::Closed,
+                resolution: Resolution::Exact,
+            },
         );
     }
 
@@ -285,7 +314,13 @@ mod tests {
         ]);
         dep(&mut w, "aaaa", "bbbb");
         let ranked = rank_next(&w, &statuses, now(), &me());
-        assert_eq!(ranked.iter().map(|r| r.task_id.as_str()).collect::<Vec<_>>(), ["aaaa"]);
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|r| r.task_id.as_str())
+                .collect::<Vec<_>>(),
+            ["aaaa"]
+        );
         close(&mut statuses, "aaaa");
         let ranked = rank_next(&w, &statuses, now(), &me());
         assert_eq!(ranked[0].task_id, "bbbb");
@@ -298,11 +333,27 @@ mod tests {
             ("bbbb", Priority::P2, "2026-07-02T00:00:00Z"),
             ("cccc", Priority::P2, "2026-07-03T00:00:00Z"),
         ]);
-        claim(&mut w, "aaaa", "other@x", "m2", "/w2", "2026-07-18T11:00:00Z"); // foreign, live
+        claim(
+            &mut w,
+            "aaaa",
+            "other@x",
+            "m2",
+            "/w2",
+            "2026-07-18T11:00:00Z",
+        ); // foreign, live
         claim(&mut w, "bbbb", "me@x", "m1", "/w1", "2026-07-18T11:00:00Z"); // mine
-        claim(&mut w, "cccc", "other@x", "m2", "/w2", "2026-07-01T00:00:00Z"); // expired
-        let ranked: Vec<_> =
-            rank_next(&w, &statuses, now(), &me()).into_iter().map(|r| r.task_id).collect();
+        claim(
+            &mut w,
+            "cccc",
+            "other@x",
+            "m2",
+            "/w2",
+            "2026-07-01T00:00:00Z",
+        ); // expired
+        let ranked: Vec<_> = rank_next(&w, &statuses, now(), &me())
+            .into_iter()
+            .map(|r| r.task_id)
+            .collect();
         assert_eq!(ranked, ["bbbb", "cccc"]);
     }
 
@@ -315,8 +366,14 @@ mod tests {
         assert_eq!(short_id(&w, "3f2a99aabbcc"), "lv-3f2a");
         assert_eq!(resolve_prefix(&w, "lv-3f2a").unwrap(), "3f2a99aabbcc");
         assert_eq!(resolve_prefix(&w, "3f2b").unwrap(), "3f2b00ddeeff");
-        assert!(matches!(resolve_prefix(&w, "3f2"), Err(PrefixError::Ambiguous(..))));
-        assert!(matches!(resolve_prefix(&w, "9999"), Err(PrefixError::NotFound(..))));
+        assert!(matches!(
+            resolve_prefix(&w, "3f2"),
+            Err(PrefixError::Ambiguous(..))
+        ));
+        assert!(matches!(
+            resolve_prefix(&w, "9999"),
+            Err(PrefixError::NotFound(..))
+        ));
     }
 
     #[test]

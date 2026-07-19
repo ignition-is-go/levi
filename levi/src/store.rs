@@ -15,8 +15,8 @@ use std::path::Path;
 use anyhow::{Context, anyhow};
 use gix::ObjectId;
 use gix::objs::tree::{Entry, EntryKind};
-use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
 use gix::refs::Target;
+use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
 use levi_core::materialize::EventRecord;
 use myko::wire::MEvent;
 
@@ -55,13 +55,18 @@ impl EventStore {
 
     /// All events on the ref. Absent ref ⇒ empty.
     pub fn read(&self) -> anyhow::Result<Vec<EventRecord>> {
-        let Some(head) = self.head()? else { return Ok(Vec::new()) };
+        let Some(head) = self.head()? else {
+            return Ok(Vec::new());
+        };
         let mut records = Vec::new();
         for (_path, oid) in self.blob_entries(head)? {
             let blob = self.repo.find_object(oid)?;
             let event: MEvent = ciborium::from_reader(blob.data.as_slice())
                 .with_context(|| format!("event blob {oid} is not valid CBOR"))?;
-            records.push(EventRecord { id: oid.to_string(), event });
+            records.push(EventRecord {
+                id: oid.to_string(),
+                event,
+            });
         }
         Ok(records)
     }
@@ -116,7 +121,11 @@ impl EventStore {
             }
             let tree = self.write_shard_tree(shards)?;
             let msg = format!("levi: {added} event(s)");
-            Ok(Some(self.write_ref_commit(tree, old.into_iter().collect(), &msg)?))
+            Ok(Some(self.write_ref_commit(
+                tree,
+                old.into_iter().collect(),
+                &msg,
+            )?))
         })?;
         Ok(Some(new_ids))
     }
@@ -164,14 +173,22 @@ impl EventStore {
             if added == 0 {
                 // Theirs ⊆ ours. Only merge-commit if theirs isn't already an
                 // ancestor (keeps sync idempotent).
-                if self.repo.merge_base(ours, theirs).map(|b| b.detach() == theirs).unwrap_or(false)
+                if self
+                    .repo
+                    .merge_base(ours, theirs)
+                    .map(|b| b.detach() == theirs)
+                    .unwrap_or(false)
                 {
                     return Ok(None);
                 }
             }
             let tree = self.write_shard_tree(shards)?;
             let msg = format!("levi: merge {added} event(s)");
-            Ok(Some(self.write_ref_commit(tree, vec![ours, theirs], &msg)?))
+            Ok(Some(self.write_ref_commit(
+                tree,
+                vec![ours, theirs],
+                &msg,
+            )?))
         })?;
         Ok(new_count)
     }
@@ -207,7 +224,9 @@ impl EventStore {
                 std::thread::sleep(std::time::Duration::from_millis(20 * attempt as u64));
             }
             let old = self.head()?;
-            let Some(new) = build(old)? else { return Ok(()) };
+            let Some(new) = build(old)? else {
+                return Ok(());
+            };
             let expected = match old {
                 Some(id) => PreviousValue::MustExistAndMatch(Target::Object(id)),
                 None => PreviousValue::MustNotExist,
@@ -258,7 +277,10 @@ impl EventStore {
             for blob in sub.iter() {
                 let blob = blob?;
                 if blob.mode().is_blob() {
-                    out.push(((shard.clone(), blob.filename().to_string()), blob.oid().into()));
+                    out.push((
+                        (shard.clone(), blob.filename().to_string()),
+                        blob.oid().into(),
+                    ));
                 }
             }
         }
@@ -286,7 +308,12 @@ impl EventStore {
             });
         }
         root_entries.sort();
-        Ok(self.repo.write_object(&gix::objs::Tree { entries: root_entries })?.detach())
+        Ok(self
+            .repo
+            .write_object(&gix::objs::Tree {
+                entries: root_entries,
+            })?
+            .detach())
     }
 
     fn write_ref_commit(

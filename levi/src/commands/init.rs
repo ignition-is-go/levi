@@ -5,7 +5,11 @@ use crate::ctx::LeviCtx;
 
 pub fn run(ctx: &LeviCtx, name: Option<String>) -> Result<()> {
     if let Some(p) = &ctx.world.project {
-        bail!("levi project already initialized here: {} ({})", p.name, p.id.0);
+        bail!(
+            "levi project already initialized here: {} ({})",
+            p.name,
+            p.id.0
+        );
     }
     let name = name.unwrap_or_else(|| {
         ctx.store

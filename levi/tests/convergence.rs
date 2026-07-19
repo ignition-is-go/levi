@@ -12,7 +12,11 @@ use common::TestRepo;
 use serde_json::Value;
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// In-process, in-memory hub (CellServer without a front door — token
@@ -127,7 +131,10 @@ fn hub_leg_converges_two_disconnected_repos() {
     b.levi_ok(&["sync", "--no-git"]);
     a.levi_ok(&["sync", "--no-git"]);
     let title = |repo: &TestRepo| {
-        repo.levi_json(&["show", &closed_id, "--json"])["title"].as_str().unwrap().to_string()
+        repo.levi_json(&["show", &closed_id, "--json"])["title"]
+            .as_str()
+            .unwrap()
+            .to_string()
     };
     assert_eq!(title(&a), "renamed by b");
     assert_eq!(title(&b), "renamed by b");
@@ -188,7 +195,10 @@ fn watch_streams_new_events() {
     let stdout = watch.stdout.take().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+        for line in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
             let _ = tx.send(line);
         }
     });
@@ -205,9 +215,7 @@ fn watch_streams_new_events() {
             Ok(line) => {
                 let v: Value = serde_json::from_str(&line).expect("watch emits JSON lines");
                 assert_eq!(v["schema"], "levi.watch/1");
-                if v["item_type"] == "Task"
-                    && v["item"]["title"].as_str() == Some("news flash")
-                {
+                if v["item_type"] == "Task" && v["item"]["title"].as_str() == Some("news flash") {
                     saw_task = true;
                     break;
                 }

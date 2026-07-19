@@ -7,8 +7,16 @@ use myko::wire::{MEvent, MEventType};
 use tempfile::TempDir;
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git").args(args).current_dir(dir).output().expect("git runs");
-    assert!(out.status.success(), "git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
@@ -42,7 +50,9 @@ fn append_and_read_roundtrip() {
 
     assert!(store.read().unwrap().is_empty());
 
-    let ids = store.append(&[task_event(1), task_event(2), task_event(3)]).unwrap();
+    let ids = store
+        .append(&[task_event(1), task_event(2), task_event(3)])
+        .unwrap();
     assert_eq!(ids.len(), 3);
     let records = store.read().unwrap();
     assert_eq!(records.len(), 3);
@@ -110,7 +120,11 @@ fn merge_ref_unions_histories() {
     let store_b = EventStore::discover(b.path()).unwrap();
     git(
         b.path(),
-        &["fetch", a.path().to_str().unwrap(), &format!("{EVENTS_REF}:{EVENTS_REF}")],
+        &[
+            "fetch",
+            a.path().to_str().unwrap(),
+            &format!("{EVENTS_REF}:{EVENTS_REF}"),
+        ],
     );
     assert_eq!(store_b.read().unwrap().len(), 2);
 
@@ -126,12 +140,19 @@ fn merge_ref_unions_histories() {
             &format!("+{EVENTS_REF}:refs/levi/remotes/origin/events"),
         ],
     );
-    let new = store_b.merge_ref("refs/levi/remotes/origin/events").unwrap();
+    let new = store_b
+        .merge_ref("refs/levi/remotes/origin/events")
+        .unwrap();
     assert_eq!(new, 1);
     assert_eq!(store_b.read().unwrap().len(), 4);
 
     // Idempotent: merging again adds nothing and creates no new commit.
     let head_before = git(b.path(), &["rev-parse", EVENTS_REF]);
-    assert_eq!(store_b.merge_ref("refs/levi/remotes/origin/events").unwrap(), 0);
+    assert_eq!(
+        store_b
+            .merge_ref("refs/levi/remotes/origin/events")
+            .unwrap(),
+        0
+    );
     assert_eq!(git(b.path(), &["rev-parse", EVENTS_REF]), head_before);
 }

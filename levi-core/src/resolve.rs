@@ -133,7 +133,10 @@ impl FactsAncestors {
             reachable.remove(head);
             complete = false;
         }
-        Self { reachable, complete }
+        Self {
+            reachable,
+            complete,
+        }
     }
 }
 
@@ -160,7 +163,11 @@ impl MapAncestors {
 
 impl AncestorSet for MapAncestors {
     fn contains(&mut self, sha: &str) -> Ancestry {
-        if self.0.contains(sha) { Ancestry::Yes } else { Ancestry::No }
+        if self.0.contains(sha) {
+            Ancestry::Yes
+        } else {
+            Ancestry::No
+        }
     }
 }
 
@@ -190,7 +197,10 @@ pub struct CachedAncestors<A: AncestorSet> {
 
 impl<A: AncestorSet> CachedAncestors<A> {
     pub fn new(inner: A) -> Self {
-        Self { inner, cache: HashMap::new() }
+        Self {
+            inner,
+            cache: HashMap::new(),
+        }
     }
 }
 
@@ -231,14 +241,28 @@ mod tests {
     #[test]
     fn no_changes_means_open() {
         let r = resolve(&[], &mut MapAncestors::of([]));
-        assert_eq!(r, ResolvedStatus { status: Status::Open, resolution: Resolution::Exact });
+        assert_eq!(
+            r,
+            ResolvedStatus {
+                status: Status::Open,
+                resolution: Resolution::Exact
+            }
+        );
     }
 
     #[test]
     fn close_anchored_on_ancestor_closes_here_only() {
-        let cs = [change("a", StatusKind::Closed, Some("sha1"), "2026-07-01T00:00:00Z")];
+        let cs = [change(
+            "a",
+            StatusKind::Closed,
+            Some("sha1"),
+            "2026-07-01T00:00:00Z",
+        )];
         // On a checkout containing sha1:
-        assert_eq!(resolve(&cs, &mut MapAncestors::of(["sha1"])).status, Status::Closed);
+        assert_eq!(
+            resolve(&cs, &mut MapAncestors::of(["sha1"])).status,
+            Status::Closed
+        );
         // On a branch that doesn't contain it:
         assert_eq!(resolve(&cs, &mut MapAncestors::of([])).status, Status::Open);
     }
@@ -246,21 +270,50 @@ mod tests {
     #[test]
     fn close_then_reopen_both_in_ancestry() {
         let cs = [
-            change("a", StatusKind::Closed, Some("sha1"), "2026-07-01T00:00:00Z"),
-            change("b", StatusKind::Reopened, Some("sha2"), "2026-07-02T00:00:00Z"),
+            change(
+                "a",
+                StatusKind::Closed,
+                Some("sha1"),
+                "2026-07-01T00:00:00Z",
+            ),
+            change(
+                "b",
+                StatusKind::Reopened,
+                Some("sha2"),
+                "2026-07-02T00:00:00Z",
+            ),
         ];
-        assert_eq!(resolve(&cs, &mut MapAncestors::of(["sha1", "sha2"])).status, Status::Open);
+        assert_eq!(
+            resolve(&cs, &mut MapAncestors::of(["sha1", "sha2"])).status,
+            Status::Open
+        );
         // Reopen anchored elsewhere: still closed here.
-        assert_eq!(resolve(&cs, &mut MapAncestors::of(["sha1"])).status, Status::Closed);
+        assert_eq!(
+            resolve(&cs, &mut MapAncestors::of(["sha1"])).status,
+            Status::Closed
+        );
     }
 
     #[test]
     fn unanchored_changes_apply_everywhere() {
-        let closed_everywhere = [change("a", StatusKind::Closed, None, "2026-07-01T00:00:00Z")];
-        assert_eq!(resolve(&closed_everywhere, &mut MapAncestors::of([])).status, Status::Closed);
+        let closed_everywhere = [change(
+            "a",
+            StatusKind::Closed,
+            None,
+            "2026-07-01T00:00:00Z",
+        )];
+        assert_eq!(
+            resolve(&closed_everywhere, &mut MapAncestors::of([])).status,
+            Status::Closed
+        );
 
         let reopened_everywhere = [
-            change("a", StatusKind::Closed, Some("sha1"), "2026-07-01T00:00:00Z"),
+            change(
+                "a",
+                StatusKind::Closed,
+                Some("sha1"),
+                "2026-07-01T00:00:00Z",
+            ),
             change("b", StatusKind::Reopened, None, "2026-07-02T00:00:00Z"),
         ];
         assert_eq!(
@@ -277,12 +330,20 @@ mod tests {
             change("aa", StatusKind::Reopened, None, at),
         ];
         // "zz" sorts after "aa", so the close wins.
-        assert_eq!(resolve(&cs, &mut MapAncestors::of([])).status, Status::Closed);
+        assert_eq!(
+            resolve(&cs, &mut MapAncestors::of([])).status,
+            Status::Closed
+        );
     }
 
     #[test]
     fn unknown_anchor_treated_open_and_flagged() {
-        let cs = [change("a", StatusKind::Closed, Some("ghost"), "2026-07-01T00:00:00Z")];
+        let cs = [change(
+            "a",
+            StatusKind::Closed,
+            Some("ghost"),
+            "2026-07-01T00:00:00Z",
+        )];
         let mut anc = PartialMapAncestors {
             yes: HashSet::new(),
             unknown: HashSet::from(["ghost".to_string()]),
@@ -295,8 +356,18 @@ mod tests {
     #[test]
     fn unknown_reopen_with_later_solid_close_stays_closed_but_partial() {
         let cs = [
-            change("a", StatusKind::Reopened, Some("ghost"), "2026-07-01T00:00:00Z"),
-            change("b", StatusKind::Closed, Some("sha1"), "2026-07-02T00:00:00Z"),
+            change(
+                "a",
+                StatusKind::Reopened,
+                Some("ghost"),
+                "2026-07-01T00:00:00Z",
+            ),
+            change(
+                "b",
+                StatusKind::Closed,
+                Some("sha1"),
+                "2026-07-02T00:00:00Z",
+            ),
         ];
         let mut anc = PartialMapAncestors {
             yes: HashSet::from(["sha1".to_string()]),
@@ -337,7 +408,12 @@ mod tests {
     #[test]
     fn facts_diamond_merge() {
         // m -> {a, b} -> root
-        let f = facts(&[("root", &[]), ("a", &["root"]), ("b", &["root"]), ("m", &["a", "b"])]);
+        let f = facts(&[
+            ("root", &[]),
+            ("a", &["root"]),
+            ("b", &["root"]),
+            ("m", &["a", "b"]),
+        ]);
         let mut anc = FactsAncestors::new(&f, "m");
         assert_eq!(anc.contains("a"), Ancestry::Yes);
         assert_eq!(anc.contains("b"), Ancestry::Yes);

@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use levi_core::resolve::{FactsAncestors, ResolvedStatus, Resolution, effective_status};
+use levi_core::resolve::{FactsAncestors, Resolution, ResolvedStatus, effective_status};
 use levi_core::{CommitFact, StatusChange, Task};
 
 /// task id -> resolved status for one project against one head sha.
@@ -34,8 +34,11 @@ pub fn statuses(
         .filter(|t| t.project_id == project_id)
         .map(|t| {
             let id = t.id.to_string();
-            let mine: Vec<&StatusChange> =
-                sorted.iter().copied().filter(|c| &*c.task_id == id).collect();
+            let mine: Vec<&StatusChange> = sorted
+                .iter()
+                .copied()
+                .filter(|c| *c.task_id == id)
+                .collect();
             let resolved = match &mut anc {
                 Some(anc) => effective_status(&mine, anc, Resolution::Facts),
                 // No known head: only unanchored changes can be judged.
@@ -63,7 +66,9 @@ pub fn now_ms() -> f64 {
 
 /// Is this claim still live? (at + ttl vs the browser clock.)
 pub fn claim_live(claim: &levi_core::Claim) -> bool {
-    let Ok(at) = chrono::DateTime::parse_from_rfc3339(&claim.at) else { return false };
+    let Ok(at) = chrono::DateTime::parse_from_rfc3339(&claim.at) else {
+        return false;
+    };
     let expires_ms = at.timestamp_millis() as f64 + (claim.ttl_secs as f64) * 1000.0;
     expires_ms > now_ms()
 }

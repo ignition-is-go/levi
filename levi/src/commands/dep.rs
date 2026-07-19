@@ -60,7 +60,10 @@ pub fn rm(ctx: &LeviCtx, blocked_input: &str, blocker_input: &str) -> Result<()>
 fn would_cycle(ctx: &LeviCtx, blocker: &str, blocked: &str) -> bool {
     let mut blocks: HashMap<&str, Vec<&str>> = HashMap::new();
     for dep in ctx.world.deps.values() {
-        blocks.entry(&dep.blocker_task_id).or_default().push(&dep.blocked_task_id);
+        blocks
+            .entry(&dep.blocker_task_id)
+            .or_default()
+            .push(&dep.blocked_task_id);
     }
     let mut seen = HashSet::new();
     let mut stack = vec![blocked];

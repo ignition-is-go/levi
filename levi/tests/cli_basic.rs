@@ -10,9 +10,15 @@ fn init_add_ls_show_roundtrip() {
     // init prints the project id; double init errors.
     let out = repo.levi_ok(&["init"]);
     assert!(out.contains("initialized levi project"), "got: {out}");
-    repo.levi(&["init"]).assert().failure().stderr(predicate::str::contains("already initialized"));
+    repo.levi(&["init"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already initialized"));
 
-    let id = repo.add("fix the flux capacitor", &["-p", "p1", "-l", "engine", "-b", "it broke"]);
+    let id = repo.add(
+        "fix the flux capacitor",
+        &["-p", "p1", "-l", "engine", "-b", "it broke"],
+    );
     assert_eq!(id.len(), 32);
 
     // ls shows it open with a short id.
@@ -36,7 +42,10 @@ fn init_add_ls_show_roundtrip() {
     assert_eq!(show2["id"], show["id"]);
 
     // Unknown and bad prefixes error clearly.
-    repo.levi(&["show", "lv-ffff"]).assert().failure().stderr(predicate::str::contains("no task matches"));
+    repo.levi(&["show", "lv-ffff"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no task matches"));
 }
 
 #[test]
@@ -64,11 +73,17 @@ fn ambiguous_prefix_lists_candidates() {
 fn uninitialized_repo_gives_guidance() {
     let repo = TestRepo::new();
     // ls without any levi events: exit 0, guidance on stderr, empty JSON.
-    repo.levi(&["ls"]).assert().success().stderr(predicate::str::contains("levi init"));
+    repo.levi(&["ls"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("levi init"));
     let ls = repo.levi_json(&["ls", "--json"]);
     assert_eq!(ls["tasks"].as_array().unwrap().len(), 0);
     // Mutating commands error.
-    repo.levi(&["add", "nope"]).assert().failure().stderr(predicate::str::contains("levi init"));
+    repo.levi(&["add", "nope"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("levi init"));
 }
 
 #[test]
@@ -93,7 +108,10 @@ fn dep_comment_edit_flow() {
     let show = repo.levi_json(&["show", &b, "--json"]);
     assert_eq!(show["blocked_by"].as_array().unwrap().len(), 0);
     repo.levi(&["dep", "rm", &b, "--on", &a]).assert().failure();
-    repo.levi(&["dep", "add", &a, "--on", &a]).assert().failure().stderr(predicate::str::contains("itself"));
+    repo.levi(&["dep", "add", &a, "--on", &a])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("itself"));
 
     repo.levi_ok(&["comment", &a, "first note"]);
     repo.levi_ok(&["comment", &a, "second note"]);
@@ -102,14 +120,19 @@ fn dep_comment_edit_flow() {
     assert_eq!(comments.len(), 2);
     assert_eq!(comments[0]["body"], "first note");
 
-    repo.levi_ok(&["edit", &a, "-p", "p0", "--title", "renamed", "-l", "+urgent", "-l", "+web"]);
+    repo.levi_ok(&[
+        "edit", &a, "-p", "p0", "--title", "renamed", "-l", "+urgent", "-l", "+web",
+    ]);
     repo.levi_ok(&["edit", &a, "-l", "-web"]);
     let show = repo.levi_json(&["show", &a, "--json"]);
     assert_eq!(show["priority"], "P0");
     assert_eq!(show["title"], "renamed");
     assert_eq!(show["labels"].as_array().unwrap().len(), 1);
     assert_eq!(show["labels"][0], "urgent");
-    repo.levi(&["edit", &a]).assert().failure().stderr(predicate::str::contains("nothing to edit"));
+    repo.levi(&["edit", &a])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing to edit"));
 }
 
 #[test]

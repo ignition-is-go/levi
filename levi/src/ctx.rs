@@ -9,7 +9,7 @@ use chrono::{SecondsFormat, Utc};
 use gix::ObjectId;
 use levi_core::materialize::{World, materialize};
 use levi_core::rank::Identity;
-use levi_core::resolve::{AncestorSet, ResolvedStatus, Resolution, effective_status};
+use levi_core::resolve::{AncestorSet, Resolution, ResolvedStatus, effective_status};
 use myko::prelude::Eventable;
 use myko::wire::{MEvent, MEventType};
 
@@ -32,7 +32,13 @@ impl LeviCtx {
         let identity = detect_identity(store.repo())?;
         let config = LeviConfig::load(store.repo());
         let world = materialize(store.read()?);
-        Ok(Self { store, world, identity, config, no_sync })
+        Ok(Self {
+            store,
+            world,
+            identity,
+            config,
+            no_sync,
+        })
     }
 
     /// Re-read and re-materialize (after an append, e.g. for `next --claim`).
@@ -87,7 +93,11 @@ impl LeviCtx {
     }
 
     /// Resolve every task's status against the given ancestor set.
-    pub fn statuses(&self, anc: &mut impl AncestorSet, base: Resolution) -> BTreeMap<String, ResolvedStatus> {
+    pub fn statuses(
+        &self,
+        anc: &mut impl AncestorSet,
+        base: Resolution,
+    ) -> BTreeMap<String, ResolvedStatus> {
         self.world
             .tasks
             .keys()
@@ -140,5 +150,9 @@ fn detect_identity(repo: &gix::Repository) -> Result<Identity> {
         Some(wd) => wd.canonicalize().unwrap_or_else(|_| wd.to_path_buf()),
         None => repo.git_dir().to_path_buf(),
     };
-    Ok(Identity { dev, machine, worktree: worktree.display().to_string() })
+    Ok(Identity {
+        dev,
+        machine,
+        worktree: worktree.display().to_string(),
+    })
 }

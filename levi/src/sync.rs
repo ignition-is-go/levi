@@ -22,7 +22,9 @@ use crate::store::EventStore;
 /// full-snapshot exchange is fine for v1; Merkle-style comparison is a later
 /// optimization (spec blesses this).
 pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
-    let Some(addr) = ctx.config.hub.clone() else { return Ok(None) };
+    let Some(addr) = ctx.config.hub.clone() else {
+        return Ok(None);
+    };
     let project_id = ctx.project_id()?;
     let timeout = Duration::from_secs(10);
 
@@ -39,9 +41,12 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     for record in &local {
         if !hub_ids.contains(&record.id) {
             let bytes = EventStore::encode(&record.event);
-            let entry =
-                LogEntry::wrap(&record.id, &project_id, &bytes, &record.event.created_at);
-            push.push(MEvent::from_item(&entry, MEventType::SET, &ctx.identity.machine));
+            let entry = LogEntry::wrap(&record.id, &project_id, &bytes, &record.event.created_at);
+            push.push(MEvent::from_item(
+                &entry,
+                MEventType::SET,
+                &ctx.identity.machine,
+            ));
         }
     }
     let pushed = push.len();
@@ -55,7 +60,10 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
         if !local_ids.contains(&*entry.id.0) {
             match entry.unwrap_event() {
                 Ok(event) => pull.push(event),
-                Err(e) => eprintln!("warning: skipping undecodable hub event {}: {e}", entry.id.0),
+                Err(e) => eprintln!(
+                    "warning: skipping undecodable hub event {}: {e}",
+                    entry.id.0
+                ),
             }
         }
     }
@@ -68,7 +76,9 @@ pub fn hub_leg(ctx: &LeviCtx) -> Result<Option<String>> {
     let facts = crate::facts::publish(ctx, &session)?;
 
     session.close();
-    Ok(Some(format!("pushed {pushed}, pulled {pulled} event(s), published {facts} fact(s)")))
+    Ok(Some(format!(
+        "pushed {pushed}, pulled {pulled} event(s), published {facts} fact(s)"
+    )))
 }
 
 /// Best-effort, silent. No hub configured (or `--no-sync`) ⇒ no-op.

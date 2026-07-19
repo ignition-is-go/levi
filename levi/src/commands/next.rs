@@ -101,7 +101,12 @@ fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
     }
     for r in ranked {
         let task = &ctx.world.tasks[&r.task_id];
-        println!("{} {} {}", short_id(&ctx.world, &r.task_id), task.priority.label(), task.title);
+        println!(
+            "{} {} {}",
+            short_id(&ctx.world, &r.task_id),
+            task.priority.label(),
+            task.title
+        );
         println!("  reason: {}", r.reason);
     }
     Ok(())

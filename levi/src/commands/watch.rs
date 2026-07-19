@@ -40,8 +40,7 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
     eprintln!("watching (ctrl-c to stop)…");
     let mut seen: HashSet<String> = HashSet::new();
     let mut synced = history.count == 0;
-    loop {
-        let Ok(entries) = rx.recv() else { break };
+    while let Ok(entries) = rx.recv() {
         if !synced {
             // Swallow the seed + initial snapshot silently.
             for entry in &entries {
@@ -50,15 +49,20 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
             synced = entries.len() >= history.count;
             continue;
         }
-        let mut batch: Vec<_> =
-            entries.iter().filter(|e| !seen.contains(&*e.id.0)).cloned().collect();
+        let mut batch: Vec<_> = entries
+            .iter()
+            .filter(|e| !seen.contains(&*e.id.0))
+            .cloned()
+            .collect();
         batch.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         for entry in batch {
             seen.insert(entry.id.to_string());
             if entry.project_id != project_id {
                 continue;
             }
-            let Ok(event) = entry.unwrap_event() else { continue };
+            let Ok(event) = entry.unwrap_event() else {
+                continue;
+            };
             if json {
                 println!(
                     "{}",

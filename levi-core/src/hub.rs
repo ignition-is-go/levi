@@ -52,7 +52,13 @@ impl SagaHandler for UnwrapLogEntries {
     type Command = ApplyLogEntry;
     const EVENT_TYPE: MEventType = MEventType::SET;
 
-    fn handle(item: LogEntry, _event: myko::wire::MEvent, _ctx: Arc<SagaContext>) -> Option<ApplyLogEntry> {
-        Some(ApplyLogEntry { cbor_b64: item.cbor_b64 })
+    fn handle(
+        item: LogEntry,
+        _event: myko::wire::MEvent,
+        _ctx: Arc<SagaContext>,
+    ) -> Option<ApplyLogEntry> {
+        Some(ApplyLogEntry {
+            cbor_b64: item.cbor_b64,
+        })
     }
 }

@@ -102,9 +102,15 @@ fn redundant_transitions_refused_without_force() {
     let repo = TestRepo::new();
     repo.init();
     let id = repo.add("t", &[]);
-    repo.levi(&["reopen", &id]).assert().failure().stderr(predicate::str::contains("already open"));
+    repo.levi(&["reopen", &id])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already open"));
     repo.levi_ok(&["close", &id]);
-    repo.levi(&["close", &id]).assert().failure().stderr(predicate::str::contains("already closed"));
+    repo.levi(&["close", &id])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already closed"));
     repo.levi_ok(&["close", &id, "--force"]);
 }
 

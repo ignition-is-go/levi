@@ -69,7 +69,13 @@ impl HubSession {
     pub fn report_once<R, O>(&self, report: R, timeout: Duration) -> Result<O>
     where
         R: ReportParams + ReportIdStatic + Clone,
-        O: myko::serde::de::DeserializeOwned + Clone + std::fmt::Debug + PartialEq + Send + Sync + 'static,
+        O: myko::serde::de::DeserializeOwned
+            + Clone
+            + std::fmt::Debug
+            + PartialEq
+            + Send
+            + Sync
+            + 'static,
     {
         let cell = self.client.watch_report::<R, O>(report);
         let deadline = Instant::now() + timeout;
@@ -105,7 +111,10 @@ impl HubSession {
                 return Ok(items.to_vec());
             }
             if Instant::now() > deadline {
-                bail!("hub query returned {} of {expected} expected items in time", items.len());
+                bail!(
+                    "hub query returned {} of {expected} expected items in time",
+                    items.len()
+                );
             }
             std::thread::sleep(Duration::from_millis(25));
         }
@@ -125,7 +134,10 @@ impl HubSession {
         let count: levi_core::LogEntryCount =
             self.report_once(levi_core::CountAllLogEntrys {}, timeout)?;
         let all = self.query_at_least(levi_core::GetAllLogEntrys {}, count.count, timeout)?;
-        Ok(all.into_iter().filter(|e| e.project_id == project_id).collect())
+        Ok(all
+            .into_iter()
+            .filter(|e| e.project_id == project_id)
+            .collect())
     }
 
     /// Send events and barrier on a round-trip so they're processed before we

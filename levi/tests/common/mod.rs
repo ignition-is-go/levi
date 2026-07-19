@@ -29,7 +29,11 @@ impl TestRepo {
     }
 
     pub fn git_in(&self, cwd: &Path, args: &[&str]) -> String {
-        let out = Command::new("git").args(args).current_dir(cwd).output().expect("git runs");
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git runs");
         assert!(
             out.status.success(),
             "git {args:?} failed: {}",
@@ -94,6 +98,9 @@ impl TestRepo {
     /// Add a task, returning its full id.
     pub fn add(&self, title: &str, extra: &[&str]) -> String {
         let out = self.levi_ok(&[&["add", title], extra].concat());
-        out.split_whitespace().nth(1).expect("add prints 'short id'").to_string()
+        out.split_whitespace()
+            .nth(1)
+            .expect("add prints 'short id'")
+            .to_string()
     }
 }

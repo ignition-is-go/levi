@@ -21,8 +21,11 @@ pub fn run(ctx: &LeviCtx, id_input: &str, kind: StatusKind, opts: StatusOpts) ->
     let short = short_id(&ctx.world, &task_id);
 
     let mut anc = ctx.ancestors_for(None)?;
-    let current =
-        effective_status(&ctx.world.changes_for(&task_id), &mut anc, Resolution::Exact);
+    let current = effective_status(
+        &ctx.world.changes_for(&task_id),
+        &mut anc,
+        Resolution::Exact,
+    );
     match (kind, current.status) {
         (StatusKind::Closed, Status::Closed) if !opts.force => {
             bail!("{short} is already closed on this checkout (use --force to close anyway)")

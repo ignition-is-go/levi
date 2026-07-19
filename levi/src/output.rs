@@ -39,7 +39,12 @@ pub fn task_json(world: &World, task: &Task, status: &ResolvedStatus, now: DateT
     })
 }
 
-pub fn task_line(world: &World, task: &Task, status: &ResolvedStatus, now: DateTime<Utc>) -> String {
+pub fn task_line(
+    world: &World,
+    task: &Task,
+    status: &ResolvedStatus,
+    now: DateTime<Utc>,
+) -> String {
     let id = task.id.to_string();
     let mut line = format!(
         "{:<12} {:<2} {:<7} {}",

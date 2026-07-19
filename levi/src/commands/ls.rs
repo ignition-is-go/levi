@@ -63,17 +63,17 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
             } else {
                 status.status == Status::Open
             };
-            let label_ok =
-                opts.label.as_ref().map(|l| t.labels.contains(l)).unwrap_or(true);
+            let label_ok = opts
+                .label
+                .as_ref()
+                .map(|l| t.labels.contains(l))
+                .unwrap_or(true);
             let mine_ok = !opts.mine
-                || ctx
-                    .world
-                    .live_claim(id, now)
-                    .is_some_and(|c| {
-                        c.dev == ctx.identity.dev
-                            && c.machine == ctx.identity.machine
-                            && c.worktree == ctx.identity.worktree
-                    });
+                || ctx.world.live_claim(id, now).is_some_and(|c| {
+                    c.dev == ctx.identity.dev
+                        && c.machine == ctx.identity.machine
+                        && c.worktree == ctx.identity.worktree
+                });
             status_ok && label_ok && mine_ok
         })
         .collect();

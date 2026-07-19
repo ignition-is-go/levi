@@ -61,7 +61,11 @@ fn git_leg(ctx: &LeviCtx) -> Result<String> {
     // A missing remote ref is fine (first push); other failures are not.
     let fetched = fetch.status.success();
 
-    let new_events = if fetched { ctx.store.merge_ref(&tracking)? } else { 0 };
+    let new_events = if fetched {
+        ctx.store.merge_ref(&tracking)?
+    } else {
+        0
+    };
 
     // Push with fetch-merge-retry: our union commit always fast-forwards the
     // remote unless someone pushed meanwhile — then re-fetch, re-union, retry.
@@ -90,5 +94,7 @@ fn git_leg(ctx: &LeviCtx) -> Result<String> {
     if !pushed {
         bail!("could not push {EVENTS_REF} to {remote} after 3 attempts");
     }
-    Ok(format!("{new_events} new event(s) fetched, pushed to {remote}"))
+    Ok(format!(
+        "{new_events} new event(s) fetched, pushed to {remote}"
+    ))
 }

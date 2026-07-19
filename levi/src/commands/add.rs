@@ -50,7 +50,10 @@ pub fn run(
     ctx.append_and_sync(events)?;
     let short = short_id(&ctx.world, &task_id);
     if json {
-        println!("{}", json!({"schema": SCHEMA_ADD, "id": task_id, "short": short}));
+        println!(
+            "{}",
+            json!({"schema": SCHEMA_ADD, "id": task_id, "short": short})
+        );
     } else {
         println!("{short} {task_id}");
     }
