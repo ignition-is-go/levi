@@ -178,12 +178,15 @@ impl ForeignStatusCache {
 mod tests {
     use super::*;
 
-    struct StateDirGuard;
-    fn temp_state() -> (tempfile::TempDir, StateDirGuard) {
+    // Env vars are process-global and tests run in parallel: serialize.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn temp_state() -> (tempfile::TempDir, std::sync::MutexGuard<'static, ()>) {
+        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
-        // SAFETY: tests in this module run single-threaded over env.
+        // SAFETY: serialized by ENV_LOCK for the guard's lifetime.
         unsafe { std::env::set_var("LEVI_STATE_DIR", dir.path()) };
-        (dir, StateDirGuard)
+        (dir, guard)
     }
 
     #[test]

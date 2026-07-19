@@ -135,7 +135,10 @@ pub fn orphaned_anchors(
     }
     // Match orphans against recent history by patch-id: same diff under a
     // new sha is almost certainly the rebased/reworded descendant.
-    let repo_dir = repo.workdir().unwrap_or_else(|| repo.git_dir()).to_path_buf();
+    let repo_dir = repo
+        .workdir()
+        .unwrap_or_else(|| repo.git_dir())
+        .to_path_buf();
     let recent = recent_patch_ids(&repo_dir, 300);
     orphaned
         .into_iter()
@@ -185,7 +188,9 @@ fn recent_patch_ids(repo_dir: &std::path::Path, limit: usize) -> Vec<(String, St
     else {
         return Vec::new();
     };
-    let Some(stdout) = log.stdout else { return Vec::new() };
+    let Some(stdout) = log.stdout else {
+        return Vec::new();
+    };
     let Ok(out) = Command::new("git")
         .args(["patch-id", "--stable"])
         .current_dir(repo_dir)
