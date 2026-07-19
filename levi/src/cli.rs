@@ -22,6 +22,21 @@ pub enum Cmd {
         #[arg(long)]
         name: Option<String>,
     },
+    /// Set this repo up for levi: init (if needed), record the hub address
+    /// in .levi/config.toml, and write task-tracking instructions for coding
+    /// agents into CLAUDE.md / AGENTS.md.
+    Onboard {
+        /// Project name (defaults to the repository directory name).
+        #[arg(long)]
+        name: Option<String>,
+        /// Hub address to record in .levi/config.toml (e.g. hub.example.com:7377).
+        #[arg(long)]
+        hub: Option<String>,
+        /// Instruction file(s) to write; defaults to every existing
+        /// CLAUDE.md / AGENTS.md, or a new AGENTS.md if neither exists.
+        #[arg(long = "file")]
+        files: Vec<std::path::PathBuf>,
+    },
     /// Add a task.
     Add {
         title: String,

@@ -52,8 +52,8 @@ fn bootstrap_pair(hub_port: u16) -> (TestRepo, TestRepo) {
     let b = TestRepo::new();
     a.init();
     let hub = format!("127.0.0.1:{hub_port}");
-    a.git(&["config", "levi.hub", &hub]);
-    b.git(&["config", "levi.hub", &hub]);
+    a.set_hub(&hub);
+    b.set_hub(&hub);
     b.git(&[
         "fetch",
         a.path().to_str().unwrap(),

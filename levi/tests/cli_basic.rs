@@ -87,6 +87,56 @@ fn uninitialized_repo_gives_guidance() {
 }
 
 #[test]
+fn onboard_sets_up_repo_and_agent_instructions() {
+    let repo = TestRepo::new();
+
+    // Fresh repo, no CLAUDE.md/AGENTS.md: initializes + creates AGENTS.md
+    // and records the hub in .levi/config.toml.
+    let out = repo.levi_ok(&["onboard", "--hub", "hub.example.com:7377"]);
+    assert!(out.contains("initialized levi project"), "got: {out}");
+    let agents = std::fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(agents.contains("<!-- levi:begin -->"));
+    assert!(agents.contains("levi next --claim"));
+    assert!(agents.contains("levi close"));
+    let config = std::fs::read_to_string(repo.path().join(".levi/config.toml")).unwrap();
+    assert!(config.contains("hub.example.com:7377"), "got: {config}");
+
+    // Re-run: idempotent — project kept, exactly one instruction block.
+    let out = repo.levi_ok(&["onboard"]);
+    assert!(out.contains("already initialized"), "got: {out}");
+    let agents = std::fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert_eq!(agents.matches("<!-- levi:begin -->").count(), 1);
+
+    // Existing CLAUDE.md content is preserved; the block is appended and
+    // replaced in place on later runs.
+    std::fs::write(
+        repo.path().join("CLAUDE.md"),
+        "# my project\n\nhand-written notes\n",
+    )
+    .unwrap();
+    repo.levi_ok(&["onboard"]);
+    let claude = std::fs::read_to_string(repo.path().join("CLAUDE.md")).unwrap();
+    assert!(claude.starts_with("# my project"));
+    assert!(claude.contains("hand-written notes"));
+    assert_eq!(claude.matches("<!-- levi:begin -->").count(), 1);
+    repo.levi_ok(&["onboard"]);
+    let claude = std::fs::read_to_string(repo.path().join("CLAUDE.md")).unwrap();
+    assert_eq!(claude.matches("<!-- levi:begin -->").count(), 1);
+
+    // --hub preserves other keys on rewrite.
+    std::fs::write(
+        repo.path().join(".levi/config.toml"),
+        "[claim]\nttl_secs = 60\n\n[hub]\naddress = \"old:1\"\n",
+    )
+    .unwrap();
+    repo.levi_ok(&["onboard", "--hub", "new:2"]);
+    let config = std::fs::read_to_string(repo.path().join(".levi/config.toml")).unwrap();
+    assert!(config.contains("ttl_secs = 60"), "got: {config}");
+    assert!(config.contains("new:2"), "got: {config}");
+    assert!(!config.contains("old:1"), "got: {config}");
+}
+
+#[test]
 fn dep_comment_edit_flow() {
     let repo = TestRepo::new();
     repo.init();

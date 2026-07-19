@@ -22,7 +22,9 @@ Depends on a local checkout of the myko framework at `../myko`.
 
 ```sh
 cd your-repo
-levi init                            # mint the project id, create the ref
+levi onboard [--hub host:port]       # init + agent instructions (AGENTS.md /
+                                     # CLAUDE.md) + hub in .levi/config.toml;
+                                     # `levi init` does just the project
 levi add "fix flux capacitor" -p p0 -l engine
 levi add "polish docs" --dep lv-3f2a # blocked by the first task
 levi next                            # highest-priority eligible work + why
@@ -39,7 +41,7 @@ Anchoring: `levi close ID` anchors at HEAD; `--anchor SHA` overrides;
 works identically. Rebased-away anchors are detected and warned about.
 
 Claims are advisory, keyed to (developer, machine, worktree), newest wins,
-expire after 24h (`git config levi.claimTtlSecs` or `[claim] ttl_secs`).
+expire after 24h (`[claim] ttl_secs` in config).
 `levi start`/`steal`/`drop` manage them; parallel `levi next --claim` on one
 machine never hands two agents the same task.
 
@@ -50,17 +52,19 @@ levi sync            # all legs; --no-git / --no-hub to skip one
 ```
 
 - **git leg**: `refs/levi/events` is fetched from / pushed to your remote
-  (`git config levi.remote`, default `origin`). Histories union-merge;
+  (`[sync] remote` in config, default `origin`). Histories union-merge;
   events are content-addressed and immutable, so sync never conflicts.
-- **hub leg**: with `git config levi.hub <host:port>`, events are exchanged
-  with a levi-hub — machines that share no git remote converge through it.
-  Every mutating command also does an opportunistic best-effort hub sync
-  (`--no-sync` to skip).
+- **hub leg**: with a hub address in `.levi/config.toml` (written by
+  `levi onboard --hub <host:port>`, committed with the repo), events are
+  exchanged with a levi-hub — machines that share no git remote converge
+  through it. Every mutating command also does an opportunistic best-effort
+  hub sync (`--no-sync` to skip).
 - **facts leg**: commit-graph slices (sha → parents, branch heads) are
   published so the git-free hub can resolve ancestry.
 
-Config file fallback: `~/.config/levi/config.toml`
-(`[hub] address`, `[sync] remote`, `[claim] ttl_secs`).
+Config: repo-level `.levi/config.toml` overrides the user-global
+`~/.config/levi/config.toml` (`[hub] address`, `[sync] remote`,
+`[claim] ttl_secs`).
 
 ## Hub + dashboard
 

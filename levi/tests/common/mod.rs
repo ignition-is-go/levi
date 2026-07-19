@@ -95,6 +95,18 @@ impl TestRepo {
         self.levi_ok(&["init"]);
     }
 
+    /// Point this repo at a hub via `.levi/config.toml` (the repo-level
+    /// config file).
+    pub fn set_hub(&self, addr: &str) {
+        let dir = self.path().join(".levi");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.toml"),
+            format!("[hub]\naddress = \"{addr}\"\n"),
+        )
+        .unwrap();
+    }
+
     /// Add a task, returning its full id.
     pub fn add(&self, title: &str, extra: &[&str]) -> String {
         let out = self.levi_ok(&[&["add", title], extra].concat());

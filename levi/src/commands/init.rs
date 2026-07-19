@@ -11,6 +11,17 @@ pub fn run(ctx: &LeviCtx, name: Option<String>) -> Result<()> {
             p.id.0
         );
     }
+    let project = create_project(ctx, name)?;
+    println!(
+        "initialized levi project '{}' ({})",
+        project.name, project.id.0
+    );
+    Ok(())
+}
+
+/// Mint the project id and append the first event (spec: stored in the first
+/// event on the ref). Callers must have checked no project exists yet.
+pub fn create_project(ctx: &LeviCtx, name: Option<String>) -> Result<Project> {
     let name = name.unwrap_or_else(|| {
         ctx.store
             .repo()
@@ -21,10 +32,9 @@ pub fn run(ctx: &LeviCtx, name: Option<String>) -> Result<()> {
     });
     let project = Project {
         id: uuid::Uuid::new_v4().simple().to_string().into(),
-        name: name.clone(),
+        name,
         created: LeviCtx::now(),
     };
     ctx.append_and_sync(vec![ctx.set_event(&project)])?;
-    println!("initialized levi project '{name}' ({})", project.id.0);
-    Ok(())
+    Ok(project)
 }

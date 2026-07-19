@@ -28,6 +28,7 @@
 6. **CommitFact/RefFact scope** — facts are published to the hub only (sync leg 3), not appended to the git ref (nodes with the repo don't need them; keeps the ref lean). They remain ordinary myko entities so they replicate hub-side like everything else.
 7. **Git transport** — fetch/push of `refs/levi/*` shells out to the `git` binary (gix push support is immature). Everything else uses gix in-process.
 8. **`levi watch`** — requires a configured hub (it is the live-subscription exception). Without a hub it exits with guidance.
+9. **Config location** — repo-level config moved from `git config levi.*` to a committed `.levi/config.toml` (written by `levi onboard --hub`), so a clone is fully configured; user-global `~/.config/levi/config.toml` remains the fallback.
 
 ## File Structure
 
