@@ -6,6 +6,25 @@ use serde_json::json;
 use crate::ctx::LeviCtx;
 use crate::output::{SCHEMA_LS, task_json, task_line};
 
+/// Warn about anchors orphaned by rebase/cherry-pick (spec §Anchoring rules).
+pub fn warn_orphaned_anchors<'a>(ctx: &LeviCtx, task_ids: impl Iterator<Item = &'a str>) {
+    let mut anchors = Vec::new();
+    for id in task_ids {
+        for change in ctx.world.changes_for(id) {
+            if let Some(sha) = &change.anchor_commit {
+                anchors.push(sha.clone());
+            }
+        }
+    }
+    for sha in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors) {
+        eprintln!(
+            "warning: anchor {} is unreachable from any ref — likely rebased away; \
+             affected tasks may show as open here. Re-run `levi close <id>` at the new HEAD.",
+            &sha[..8.min(sha.len())]
+        );
+    }
+}
+
 pub struct LsOpts {
     pub json: bool,
     pub all: bool,
@@ -61,6 +80,8 @@ pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
     rows.sort_by(|a, b| {
         (a.priority.rank(), a.created_at.as_str()).cmp(&(b.priority.rank(), b.created_at.as_str()))
     });
+
+    warn_orphaned_anchors(ctx, rows.iter().map(|t| &*t.id.0));
 
     if opts.json {
         let tasks: Vec<_> = rows

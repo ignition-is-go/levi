@@ -64,3 +64,52 @@ impl AncestorSet for GixAncestors<'_> {
         a
     }
 }
+
+/// Orphaned-anchor detection (spec §Anchoring rules): a rebase/cherry-pick
+/// moves shas, leaving an anchor unreachable from every ref — the task then
+/// looks open on the rewritten history. Correct per the model, but
+/// surprising, so the CLI warns and suggests a re-close. Checks only the
+/// anchors passed in (the tasks being displayed) to stay cheap.
+pub fn orphaned_anchors(
+    repo: &gix::Repository,
+    anchors: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    // Collect ref tips once (branches, tags, remotes — not refs/levi/*).
+    let mut tips: Vec<ObjectId> = Vec::new();
+    if let Ok(platform) = repo.references() {
+        if let Ok(iter) = platform.all() {
+            for reference in iter.flatten() {
+                let name = reference.name().as_bstr().to_string();
+                if name.starts_with("refs/levi/") {
+                    continue;
+                }
+                let mut reference = reference;
+                if let Ok(id) = reference.peel_to_id() {
+                    tips.push(id.detach());
+                }
+            }
+        }
+    }
+    let mut orphaned = Vec::new();
+    let mut seen = HashMap::new();
+    for sha in anchors {
+        if seen.contains_key(&sha) {
+            continue;
+        }
+        let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else { continue };
+        // Missing objects are "unfetched", not orphaned — different warning.
+        if repo.try_find_object(anchor).ok().flatten().is_none() {
+            seen.insert(sha, false);
+            continue;
+        }
+        let reachable = tips.iter().any(|tip| {
+            *tip == anchor
+                || repo.merge_base(*tip, anchor).map(|b| b.detach() == anchor).unwrap_or(false)
+        });
+        seen.insert(sha.clone(), !reachable);
+        if !reachable {
+            orphaned.push(sha);
+        }
+    }
+    orphaned
+}

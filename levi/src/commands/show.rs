@@ -83,6 +83,8 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         }
     }
 
+    super::ls::warn_orphaned_anchors(ctx, std::iter::once(task_id.as_str()));
+
     let claim = claim_json(&ctx.world, &task_id, now);
     if json {
         println!(
