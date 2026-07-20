@@ -278,3 +278,23 @@ fn next_without_remote_degrades_gracefully() {
         .stdout(predicate::str::contains("\"tasks\":[]"))
         .stderr(predicate::str::contains("no levi events here"));
 }
+
+#[test]
+fn ls_recovers_events_from_remote_on_fresh_clone() {
+    let (base, a, b) = two_clones();
+    base.levi_in(a.clone(), &["init"]).assert().success();
+    base.levi_in(a.clone(), &["add", "remote task"])
+        .assert()
+        .success();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    let out = base
+        .levi_syncing(b.clone(), &["ls", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let ls: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(ls["tasks"].as_array().unwrap().len(), 1);
+}

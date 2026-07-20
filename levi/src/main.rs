@@ -34,7 +34,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             branch,
             mine,
         } => commands::ls::run(
-            &ctx,
+            &mut ctx,
             commands::ls::LsOpts {
                 json,
                 all,
