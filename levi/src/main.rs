@@ -15,8 +15,7 @@ fn main() {
 fn run(cli: Cli) -> anyhow::Result<()> {
     let mut ctx = LeviCtx::load(cli.no_sync)?;
     match cli.cmd {
-        Cmd::Init { name } => commands::init::run(&mut ctx, name),
-        Cmd::Onboard { name, hub, files } => commands::onboard::run(&ctx, name, hub, files),
+        Cmd::Init { name, hub, files } => commands::init::run(&mut ctx, name, hub, files),
         Cmd::Add {
             title,
             project,

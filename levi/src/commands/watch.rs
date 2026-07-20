@@ -17,7 +17,7 @@ use crate::output::SCHEMA_WATCH;
 pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
     let Some(addr) = ctx.config.hub.clone() else {
         bail!(
-            "levi watch needs a hub: run `levi onboard --hub <host:port>` \
+            "levi watch needs a hub: run `levi init --hub <host:port>` \
              (writes .levi/config.toml), or set [hub] address in \
              ~/.config/levi/config.toml"
         );

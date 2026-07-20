@@ -307,13 +307,19 @@ fn init_adopts_existing_project_from_remote() {
         .output()
         .unwrap();
     assert!(a_out.status.success());
-    // "initialized levi project 'shared' (<id>)"
+    // The "initialized levi project 'shared' (<id>)" line — `init` now also
+    // writes agent instructions and (absent --hub) prints a tip, both of
+    // which can contain their own '(...)' groups, so scope the id
+    // extraction to just that line rather than the whole stdout.
     let a_stdout = String::from_utf8_lossy(&a_out.stdout).to_string();
-    let a_id = a_stdout
+    let a_line = a_stdout
+        .lines()
+        .find(|l| l.starts_with("initialized levi project"))
+        .unwrap_or_else(|| panic!("no 'initialized levi project' line — stdout: {a_stdout}"));
+    let a_id = a_line
         .split('(')
         .nth(1)
         .unwrap()
-        .trim_end()
         .trim_end_matches(')')
         .to_string();
     base.levi_in(a.clone(), &["sync", "--no-hub"])
@@ -327,11 +333,13 @@ fn init_adopts_existing_project_from_remote() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("joined existing levi project 'shared'"),
-        "stdout: {stdout}"
-    );
-    assert!(stdout.contains(&a_id), "ids must match — stdout: {stdout}");
+    let b_line = stdout
+        .lines()
+        .find(|l| l.starts_with("joined existing levi project 'shared'"))
+        .unwrap_or_else(|| {
+            panic!("no \"joined existing levi project 'shared'\" line — stdout: {stdout}")
+        });
+    assert!(b_line.contains(&a_id), "ids must match — line: {b_line}");
 }
 
 #[test]
