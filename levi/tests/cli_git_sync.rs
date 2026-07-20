@@ -298,3 +298,63 @@ fn ls_recovers_events_from_remote_on_fresh_clone() {
     let ls: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(ls["tasks"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn init_adopts_existing_project_from_remote() {
+    let (base, a, b) = two_clones();
+    let a_out = base
+        .levi_in(a.clone(), &["init", "--name", "shared"])
+        .output()
+        .unwrap();
+    assert!(a_out.status.success());
+    // "initialized levi project 'shared' (<id>)"
+    let a_stdout = String::from_utf8_lossy(&a_out.stdout).to_string();
+    let a_id = a_stdout
+        .split('(')
+        .nth(1)
+        .unwrap()
+        .trim_end()
+        .trim_end_matches(')')
+        .to_string();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    let out = base.levi_syncing(b.clone(), &["init"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("joined existing levi project 'shared'"),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains(&a_id), "ids must match — stdout: {stdout}");
+}
+
+#[test]
+fn init_mints_when_remote_has_no_events_ref() {
+    let (base, _a, b) = two_clones();
+    let out = base.levi_syncing(b.clone(), &["init"]).output().unwrap();
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("initialized levi project"),
+    );
+}
+
+#[test]
+fn init_bails_when_remote_unreachable_unless_no_sync() {
+    let repo = TestRepo::new();
+    repo.git(&["remote", "add", "origin", "/nonexistent/nowhere.git"]);
+    repo.levi_syncing(repo.path().to_path_buf(), &["init"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot reach remote 'origin'"));
+    // Escape hatch: --no-sync skips the probe and mints (levi() injects it).
+    repo.levi(&["init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("initialized levi project"));
+}
