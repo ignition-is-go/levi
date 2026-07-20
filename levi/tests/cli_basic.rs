@@ -204,3 +204,22 @@ fn add_with_dep_links_tasks() {
     let show_blocker = repo.levi_json(&["show", &blocker, "--json"]);
     assert_eq!(show_blocker["blocks"][0]["id"].as_str().unwrap(), blocked);
 }
+
+#[test]
+fn init_works_in_bare_repo() {
+    let repo = TestRepo::new();
+    let bare = repo.path().join("bare.git");
+    repo.git(&["clone", "-q", "--bare", ".", bare.to_str().unwrap()]);
+    repo.git_in(&bare, &["config", "user.email", "agent@test"]);
+    repo.git_in(&bare, &["config", "user.name", "Agent"]);
+    let out = repo.levi_in(bare.clone(), &["init"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("initialized levi project"), "stdout: {stdout}");
+    // No AGENTS.md materialized inside the bare repo.
+    assert!(!bare.join("AGENTS.md").exists());
+}

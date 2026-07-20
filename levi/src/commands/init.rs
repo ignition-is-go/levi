@@ -60,6 +60,13 @@ pub fn run(
     hub: Option<String>,
     files: Vec<PathBuf>,
 ) -> Result<()> {
+    // 0. --hub/--file need somewhere on disk to write to; fail before any
+    // mutation rather than minting a project and then discovering there's
+    // no worktree to record it in.
+    if ctx.store.repo().workdir().is_none() && (hub.is_some() || !files.is_empty()) {
+        bail!("levi init --hub/--file needs a worktree (not a bare repo)");
+    }
+
     // 1. Project: reuse what's here, adopt from the remote, or mint.
     if let Some(p) = &ctx.world.project {
         println!("levi project already initialized: {} ({})", p.name, p.id.0);
@@ -71,12 +78,10 @@ pub fn run(
         );
     }
 
-    let root = ctx
-        .store
-        .repo()
-        .workdir()
-        .context("levi init needs a worktree (not a bare repo)")?
-        .to_path_buf();
+    let Some(root) = ctx.store.repo().workdir().map(|w| w.to_path_buf()) else {
+        eprintln!("levi: bare repo — skipped agent instructions and hub recording");
+        return Ok(());
+    };
 
     // 2. Hub address: recorded in .levi/config.toml so it travels with the
     //    repo (committed, one clone away from working).
