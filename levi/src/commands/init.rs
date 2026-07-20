@@ -183,7 +183,12 @@ fn adopt_from_remote(ctx: &mut LeviCtx) -> Result<bool> {
         return Ok(false);
     }
     let probe = Command::new("git")
-        .args(["ls-remote", "--exit-code", &remote, crate::store::EVENTS_REF])
+        .args([
+            "ls-remote",
+            "--exit-code",
+            &remote,
+            crate::store::EVENTS_REF,
+        ])
         .current_dir(&repo_dir)
         .output()
         .context("running git ls-remote")?;
@@ -191,8 +196,7 @@ fn adopt_from_remote(ctx: &mut LeviCtx) -> Result<bool> {
         // --exit-code: 2 = remote reachable, no matching ref.
         Some(2) => Ok(false),
         Some(0) => {
-            crate::sync::git_leg(ctx)
-                .context("remote has levi events but fetching them failed")?;
+            crate::sync::git_leg(ctx).context("remote has levi events but fetching them failed")?;
             ctx.reload()?;
             match &ctx.world.project {
                 Some(p) => {

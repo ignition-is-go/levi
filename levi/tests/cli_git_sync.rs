@@ -248,7 +248,12 @@ fn next_recovers_events_from_remote_on_fresh_clone() {
     assert!(out.status.success());
     let next: Value = serde_json::from_slice(&out.stdout).unwrap();
     let tasks = next["tasks"].as_array().unwrap();
-    assert_eq!(tasks.len(), 1, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        tasks.len(),
+        1,
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(tasks[0]["title"], "remote task");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -380,9 +385,7 @@ fn init_mints_when_remote_has_no_events_ref() {
     let (base, _a, b) = two_clones();
     let out = base.levi_syncing(b.clone(), &["init"]).output().unwrap();
     assert!(out.status.success());
-    assert!(
-        String::from_utf8_lossy(&out.stdout).contains("initialized levi project"),
-    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("initialized levi project"),);
 }
 
 #[test]

@@ -219,7 +219,10 @@ fn init_works_in_bare_repo() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("initialized levi project"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("initialized levi project"),
+        "stdout: {stdout}"
+    );
     // No AGENTS.md materialized inside the bare repo.
     assert!(!bare.join("AGENTS.md").exists());
 }
