@@ -23,7 +23,7 @@ use crate::store::EventStore;
 pub fn connect(ctx: &LeviCtx) -> Result<HubSession> {
     let Some(addr) = ctx.config.hub.clone() else {
         bail!(
-            "cross-project operations need a hub: run `levi onboard --hub <host:port>` \
+            "cross-project operations need a hub: run `levi init --hub <host:port>` \
              (writes .levi/config.toml)"
         );
     };

@@ -6,7 +6,6 @@ pub mod edit;
 pub mod init;
 pub mod ls;
 pub mod next;
-pub mod onboard;
 pub mod show;
 pub mod status;
 pub mod sync_cmd;

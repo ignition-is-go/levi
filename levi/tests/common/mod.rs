@@ -83,6 +83,17 @@ impl TestRepo {
         cmd
     }
 
+    /// Like `levi_in`, but WITHOUT the default `--no-sync` — for tests that
+    /// exercise sync-dependent behavior (recovery, init adoption). Same
+    /// hermetic config/state env.
+    pub fn levi_syncing(&self, cwd: PathBuf, args: &[&str]) -> assert_cmd::Command {
+        let mut cmd = assert_cmd::Command::cargo_bin("levi").unwrap();
+        cmd.current_dir(cwd).args(args);
+        cmd.env("LEVI_CONFIG", self.path().join("levi-test-config.toml"));
+        cmd.env("LEVI_STATE_DIR", self.path().join("levi-test-state"));
+        cmd
+    }
+
     /// Run levi expecting success; returns stdout.
     pub fn levi_ok(&self, args: &[&str]) -> String {
         let out = self.levi(args).output().unwrap();

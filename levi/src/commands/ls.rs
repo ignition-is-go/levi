@@ -42,8 +42,8 @@ pub struct LsOpts {
     pub mine: bool,
 }
 
-pub fn run(ctx: &LeviCtx, opts: LsOpts) -> Result<()> {
-    if ctx.uninitialized() {
+pub fn run(ctx: &mut LeviCtx, opts: LsOpts) -> Result<()> {
+    if ctx.uninitialized() && !crate::sync::recover_uninitialized(ctx) {
         if opts.json {
             println!("{}", json!({"schema": SCHEMA_LS, "tasks": []}));
         }

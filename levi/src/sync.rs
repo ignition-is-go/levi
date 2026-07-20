@@ -177,6 +177,14 @@ pub fn git_leg(ctx: &LeviCtx) -> Result<String> {
         0
     };
 
+    // Neither side has events yet: pushing would fail ("src refspec does not
+    // match any") since there's nothing on the local ref to push, and it's
+    // not worth the round trip to find that out. Most repos that don't use
+    // levi hit this on every `next`/`ls` — stay quiet and skip.
+    if !fetched && ctx.store.repo().find_reference(EVENTS_REF).is_err() {
+        return Ok(format!("no levi events locally or on '{remote}'; skipped"));
+    }
+
     // Push with fetch-merge-retry: our union commit always fast-forwards the
     // remote unless someone pushed meanwhile — then re-fetch, re-union, retry.
     let mut pushed = false;
@@ -247,4 +255,28 @@ pub fn opportunistic(ctx: &LeviCtx) {
         .stderr(std::process::Stdio::null())
         .spawn();
     // Deliberately not waited on: the child outlives this process.
+}
+
+/// Blocking recovery for read commands on a fresh clone: when the events
+/// ref is absent locally, run the git leg once and reload. Hub-based
+/// recovery is impossible while uninitialized (the hub is queried by
+/// project id, which we don't know yet) — but once the git leg lands
+/// events, the hub leg tops up best-effort. Failures degrade to a stderr
+/// note and `false`; stdout stays reserved for command output.
+pub fn recover_uninitialized(ctx: &mut LeviCtx) -> bool {
+    if ctx.no_sync || !ctx.uninitialized() {
+        return false;
+    }
+    if let Err(e) = git_leg(ctx) {
+        eprintln!("levi: sync attempt failed: {e:#}");
+    }
+    if ctx.reload().is_err() || ctx.uninitialized() {
+        return false;
+    }
+    if let Err(e) = hub_leg(ctx) {
+        eprintln!("levi: hub sync failed: {e:#}");
+    }
+    let _ = ctx.reload();
+    eprintln!("levi: fetched events via sync (repo had none locally)");
+    true
 }

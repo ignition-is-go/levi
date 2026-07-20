@@ -228,3 +228,174 @@ fn rewritten_anchor_suggests_the_new_sha() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+fn next_recovers_events_from_remote_on_fresh_clone() {
+    let (base, a, b) = two_clones();
+    base.levi_in(a.clone(), &["init"]).assert().success();
+    base.levi_in(a.clone(), &["add", "remote task"])
+        .assert()
+        .success();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    // b has no refs/levi/events; `next` without --no-sync must fetch it.
+    let out = base
+        .levi_syncing(b.clone(), &["next", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let next: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let tasks = next["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(tasks[0]["title"], "remote task");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("fetched events via sync"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn next_stays_quiet_when_remote_has_no_events() {
+    let (base, _a, b) = two_clones();
+
+    // Neither clone has ever run `levi init`: no events locally or on the
+    // remote. `next` without --no-sync should skip the doomed push quietly
+    // instead of printing a misleading push-failure note.
+    let out = base
+        .levi_syncing(b.clone(), &["next", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"tasks\":[]"), "stdout: {stdout}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no levi events here"), "stderr: {stderr}");
+    assert!(
+        predicate::str::contains("sync attempt failed")
+            .not()
+            .eval(&stderr),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn next_with_no_sync_does_not_recover() {
+    let (base, a, b) = two_clones();
+    base.levi_in(a.clone(), &["init"]).assert().success();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    // levi_in injects --no-sync: today's dead-end message, no fetch.
+    base.levi_in(b.clone(), &["next", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tasks\":[]"))
+        .stderr(predicate::str::contains("no levi events here"));
+}
+
+#[test]
+fn next_without_remote_degrades_gracefully() {
+    // No remote configured at all: recovery is a quiet miss, exit 0.
+    let repo = TestRepo::new();
+    repo.levi_syncing(repo.path().to_path_buf(), &["next", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tasks\":[]"))
+        .stderr(predicate::str::contains("no levi events here"));
+}
+
+#[test]
+fn ls_recovers_events_from_remote_on_fresh_clone() {
+    let (base, a, b) = two_clones();
+    base.levi_in(a.clone(), &["init"]).assert().success();
+    base.levi_in(a.clone(), &["add", "remote task"])
+        .assert()
+        .success();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    let out = base
+        .levi_syncing(b.clone(), &["ls", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let ls: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(ls["tasks"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn init_adopts_existing_project_from_remote() {
+    let (base, a, b) = two_clones();
+    let a_out = base
+        .levi_in(a.clone(), &["init", "--name", "shared"])
+        .output()
+        .unwrap();
+    assert!(a_out.status.success());
+    // The "initialized levi project 'shared' (<id>)" line — `init` now also
+    // writes agent instructions and (absent --hub) prints a tip, both of
+    // which can contain their own '(...)' groups, so scope the id
+    // extraction to just that line rather than the whole stdout.
+    let a_stdout = String::from_utf8_lossy(&a_out.stdout).to_string();
+    let a_line = a_stdout
+        .lines()
+        .find(|l| l.starts_with("initialized levi project"))
+        .unwrap_or_else(|| panic!("no 'initialized levi project' line — stdout: {a_stdout}"));
+    let a_id = a_line
+        .split('(')
+        .nth(1)
+        .unwrap()
+        .trim_end_matches(')')
+        .to_string();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    let out = base.levi_syncing(b.clone(), &["init"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let b_line = stdout
+        .lines()
+        .find(|l| l.starts_with("joined existing levi project 'shared'"))
+        .unwrap_or_else(|| {
+            panic!("no \"joined existing levi project 'shared'\" line — stdout: {stdout}")
+        });
+    assert!(b_line.contains(&a_id), "ids must match — line: {b_line}");
+}
+
+#[test]
+fn init_mints_when_remote_has_no_events_ref() {
+    let (base, _a, b) = two_clones();
+    let out = base.levi_syncing(b.clone(), &["init"]).output().unwrap();
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("initialized levi project"),
+    );
+}
+
+#[test]
+fn init_bails_when_remote_unreachable_unless_no_sync() {
+    let repo = TestRepo::new();
+    repo.git(&["remote", "add", "origin", "/nonexistent/nowhere.git"]);
+    repo.levi_syncing(repo.path().to_path_buf(), &["init"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot reach remote 'origin'"));
+    // Escape hatch: --no-sync skips the probe and mints (levi() injects it).
+    repo.levi(&["init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("initialized levi project"));
+}

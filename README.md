@@ -20,9 +20,9 @@ cd levi-dash && trunk build      # dashboard (wasm; needs trunk + wasm32 target)
 
 ```sh
 cd your-repo
-levi onboard [--hub host:port]       # init + agent instructions (AGENTS.md /
-                                     # CLAUDE.md) + hub in .levi/config.toml;
-                                     # `levi init` does just the project
+levi init [--hub host:port]          # adopt-or-create the project + agent
+                                     # instructions (AGENTS.md / CLAUDE.md)
+                                     # + hub in .levi/config.toml
 levi add "fix flux capacitor" -p p0 -l engine
 levi add "polish docs" --dep lv-3f2a # blocked by the first task
 levi next                            # highest-priority eligible work + why
@@ -53,7 +53,7 @@ levi sync            # all legs; --no-git / --no-hub to skip one
   (`[sync] remote` in config, default `origin`). Histories union-merge;
   events are content-addressed and immutable, so sync never conflicts.
 - **hub leg**: with a hub address in `.levi/config.toml` (written by
-  `levi onboard --hub <host:port>`, committed with the repo), events are
+  `levi init --hub <host:port>`, committed with the repo), events are
   exchanged with a levi-hub — machines that share no git remote converge
   through it. Every mutating command also does an opportunistic best-effort
   hub sync (`--no-sync` to skip).

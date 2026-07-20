@@ -7,13 +7,11 @@ use predicates::prelude::*;
 fn init_add_ls_show_roundtrip() {
     let repo = TestRepo::new();
 
-    // init prints the project id; double init errors.
+    // init prints the project id; re-running is idempotent setup, not an error.
     let out = repo.levi_ok(&["init"]);
     assert!(out.contains("initialized levi project"), "got: {out}");
-    repo.levi(&["init"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("already initialized"));
+    let out = repo.levi_ok(&["init"]);
+    assert!(out.contains("already initialized"), "got: {out}");
 
     let id = repo.add(
         "fix the flux capacitor",
@@ -87,12 +85,12 @@ fn uninitialized_repo_gives_guidance() {
 }
 
 #[test]
-fn onboard_sets_up_repo_and_agent_instructions() {
+fn init_sets_up_repo_and_agent_instructions() {
     let repo = TestRepo::new();
 
     // Fresh repo, no CLAUDE.md/AGENTS.md: initializes + creates AGENTS.md
     // and records the hub in .levi/config.toml.
-    let out = repo.levi_ok(&["onboard", "--hub", "hub.example.com:7377"]);
+    let out = repo.levi_ok(&["init", "--hub", "hub.example.com:7377"]);
     assert!(out.contains("initialized levi project"), "got: {out}");
     let agents = std::fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
     assert!(agents.contains("<!-- levi:begin -->"));
@@ -102,7 +100,7 @@ fn onboard_sets_up_repo_and_agent_instructions() {
     assert!(config.contains("hub.example.com:7377"), "got: {config}");
 
     // Re-run: idempotent — project kept, exactly one instruction block.
-    let out = repo.levi_ok(&["onboard"]);
+    let out = repo.levi_ok(&["init"]);
     assert!(out.contains("already initialized"), "got: {out}");
     let agents = std::fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
     assert_eq!(agents.matches("<!-- levi:begin -->").count(), 1);
@@ -114,12 +112,12 @@ fn onboard_sets_up_repo_and_agent_instructions() {
         "# my project\n\nhand-written notes\n",
     )
     .unwrap();
-    repo.levi_ok(&["onboard"]);
+    repo.levi_ok(&["init"]);
     let claude = std::fs::read_to_string(repo.path().join("CLAUDE.md")).unwrap();
     assert!(claude.starts_with("# my project"));
     assert!(claude.contains("hand-written notes"));
     assert_eq!(claude.matches("<!-- levi:begin -->").count(), 1);
-    repo.levi_ok(&["onboard"]);
+    repo.levi_ok(&["init"]);
     let claude = std::fs::read_to_string(repo.path().join("CLAUDE.md")).unwrap();
     assert_eq!(claude.matches("<!-- levi:begin -->").count(), 1);
 
@@ -129,11 +127,18 @@ fn onboard_sets_up_repo_and_agent_instructions() {
         "[claim]\nttl_secs = 60\n\n[hub]\naddress = \"old:1\"\n",
     )
     .unwrap();
-    repo.levi_ok(&["onboard", "--hub", "new:2"]);
+    repo.levi_ok(&["init", "--hub", "new:2"]);
     let config = std::fs::read_to_string(repo.path().join(".levi/config.toml")).unwrap();
     assert!(config.contains("ttl_secs = 60"), "got: {config}");
     assert!(config.contains("new:2"), "got: {config}");
     assert!(!config.contains("old:1"), "got: {config}");
+}
+
+#[test]
+fn onboard_alias_still_works() {
+    let repo = TestRepo::new();
+    let out = repo.levi_ok(&["onboard"]);
+    assert!(out.contains("initialized levi project"), "got: {out}");
 }
 
 #[test]
@@ -198,4 +203,23 @@ fn add_with_dep_links_tasks() {
     assert_eq!(blocked_by[0]["status"], "open");
     let show_blocker = repo.levi_json(&["show", &blocker, "--json"]);
     assert_eq!(show_blocker["blocks"][0]["id"].as_str().unwrap(), blocked);
+}
+
+#[test]
+fn init_works_in_bare_repo() {
+    let repo = TestRepo::new();
+    let bare = repo.path().join("bare.git");
+    repo.git(&["clone", "-q", "--bare", ".", bare.to_str().unwrap()]);
+    repo.git_in(&bare, &["config", "user.email", "agent@test"]);
+    repo.git_in(&bare, &["config", "user.name", "Agent"]);
+    let out = repo.levi_in(bare.clone(), &["init"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("initialized levi project"), "stdout: {stdout}");
+    // No AGENTS.md materialized inside the bare repo.
+    assert!(!bare.join("AGENTS.md").exists());
 }

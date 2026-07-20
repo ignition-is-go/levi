@@ -16,16 +16,12 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Cmd {
-    /// Mint the project id and create the events ref.
+    /// Set this repo up for levi: adopt the project from the remote when
+    /// one exists (mint it otherwise), record the hub address in
+    /// .levi/config.toml, and write task-tracking instructions for coding
+    /// agents into CLAUDE.md / AGENTS.md. Idempotent.
+    #[command(alias = "onboard")]
     Init {
-        /// Project name (defaults to the repository directory name).
-        #[arg(long)]
-        name: Option<String>,
-    },
-    /// Set this repo up for levi: init (if needed), record the hub address
-    /// in .levi/config.toml, and write task-tracking instructions for coding
-    /// agents into CLAUDE.md / AGENTS.md.
-    Onboard {
         /// Project name (defaults to the repository directory name).
         #[arg(long)]
         name: Option<String>,
