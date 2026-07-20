@@ -16,11 +16,14 @@ use crate::ctx::LeviCtx;
 use crate::output::{SCHEMA_NEXT, task_json};
 
 pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<()> {
-    if ctx.uninitialized() {
+    if ctx.uninitialized() && !crate::sync::recover_uninitialized(ctx) {
         if json {
             println!("{}", json!({"schema": SCHEMA_NEXT, "tasks": []}));
         }
-        eprintln!("no levi events here. Run `levi init` first.");
+        eprintln!(
+            "no levi events here. Run `levi init`, or fetch existing events with \
+             `git fetch <remote> '+refs/levi/events:refs/levi/events'` (or `levi sync`)."
+        );
         return Ok(());
     }
 

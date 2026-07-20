@@ -228,3 +228,53 @@ fn rewritten_anchor_suggests_the_new_sha() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+fn next_recovers_events_from_remote_on_fresh_clone() {
+    let (base, a, b) = two_clones();
+    base.levi_in(a.clone(), &["init"]).assert().success();
+    base.levi_in(a.clone(), &["add", "remote task"])
+        .assert()
+        .success();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    // b has no refs/levi/events; `next` without --no-sync must fetch it.
+    let out = base
+        .levi_syncing(b.clone(), &["next", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let next: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let tasks = next["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(tasks[0]["title"], "remote task");
+}
+
+#[test]
+fn next_with_no_sync_does_not_recover() {
+    let (base, a, b) = two_clones();
+    base.levi_in(a.clone(), &["init"]).assert().success();
+    base.levi_in(a.clone(), &["sync", "--no-hub"])
+        .assert()
+        .success();
+
+    // levi_in injects --no-sync: today's dead-end message, no fetch.
+    base.levi_in(b.clone(), &["next", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tasks\":[]"))
+        .stderr(predicate::str::contains("no levi events here"));
+}
+
+#[test]
+fn next_without_remote_degrades_gracefully() {
+    // No remote configured at all: recovery is a quiet miss, exit 0.
+    let repo = TestRepo::new();
+    repo.levi_syncing(repo.path().to_path_buf(), &["next", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tasks\":[]"))
+        .stderr(predicate::str::contains("no levi events here"));
+}
