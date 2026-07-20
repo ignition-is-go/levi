@@ -250,6 +250,39 @@ fn next_recovers_events_from_remote_on_fresh_clone() {
     let tasks = next["tasks"].as_array().unwrap();
     assert_eq!(tasks.len(), 1, "stderr: {}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(tasks[0]["title"], "remote task");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("fetched events via sync"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn next_stays_quiet_when_remote_has_no_events() {
+    let (base, _a, b) = two_clones();
+
+    // Neither clone has ever run `levi init`: no events locally or on the
+    // remote. `next` without --no-sync should skip the doomed push quietly
+    // instead of printing a misleading push-failure note.
+    let out = base
+        .levi_syncing(b.clone(), &["next", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"tasks\":[]"), "stdout: {stdout}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no levi events here"), "stderr: {stderr}");
+    assert!(
+        predicate::str::contains("sync attempt failed")
+            .not()
+            .eval(&stderr),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]

@@ -177,6 +177,14 @@ pub fn git_leg(ctx: &LeviCtx) -> Result<String> {
         0
     };
 
+    // Neither side has events yet: pushing would fail ("src refspec does not
+    // match any") since there's nothing on the local ref to push, and it's
+    // not worth the round trip to find that out. Most repos that don't use
+    // levi hit this on every `next`/`ls` — stay quiet and skip.
+    if !fetched && ctx.store.repo().find_reference(EVENTS_REF).is_err() {
+        return Ok(format!("no levi events locally or on '{remote}'; skipped"));
+    }
+
     // Push with fetch-merge-retry: our union commit always fast-forwards the
     // remote unless someone pushed meanwhile — then re-fetch, re-union, retry.
     let mut pushed = false;
