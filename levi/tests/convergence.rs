@@ -187,6 +187,7 @@ fn watch_streams_new_events() {
     let mut watch = std::process::Command::new(&bin)
         .current_dir(b.path())
         .env("LEVI_CONFIG", b.path().join("levi-test-config.toml"))
+        .env("LEVI_STATE_DIR", b.path().join("levi-test-state"))
         .args(["watch", "--json"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())

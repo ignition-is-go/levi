@@ -186,6 +186,7 @@ fn parallel_next_claim_yields_distinct_tasks() {
             std::process::Command::new(&bin)
                 .current_dir(wt)
                 .env("LEVI_CONFIG", &config)
+                .env("LEVI_STATE_DIR", repo.path().join("levi-test-state"))
                 .args(["--no-sync", "next", "--claim", "--json"])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
