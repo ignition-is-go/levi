@@ -17,6 +17,9 @@ levi-core = { workspace = true }
 myko = { workspace = true }
 myko-leptos = { workspace = true }
 leptos = { version = "0.8", features = ["csr"] }
+# Git, not crates.io, and it has to stay that way: the `mullion` name on
+# crates.io belongs to an unrelated terminal-UI crate, so a version spec
+# here would silently pull the wrong library.
 mullion = { git = "https://github.com/ignition-is-go/mullion", branch = "main" }
 pulse-leptos-ui = "0.9"
 console_error_panic_hook = "0.1"
