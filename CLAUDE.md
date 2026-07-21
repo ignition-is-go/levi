@@ -61,4 +61,9 @@ anchors at HEAD, so it only applies where the fixing commit exists
 `levi comment <id> "text"`.
 - Sync is opportunistic after every mutation; `levi sync` forces a full
 git-remote + hub exchange.
+- **Cross-project**: file upstream bugs with `levi add --project <name>
+"title"`; link with `levi dep add <id> --on <project>/lv-xxxx --via
+"<how this repo consumes that project>"`. When a foreign blocker
+closes, verify the fix is actually reachable through the `via`
+mechanism (published release, updated pin, ...) before starting work.
 <!-- levi:end -->
