@@ -1,3 +1,4 @@
 target/
 levi-dash/dist/
 .env
+.superpowers/
