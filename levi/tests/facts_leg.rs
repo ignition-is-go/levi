@@ -78,7 +78,11 @@ fn unchanged_branch_heads_are_not_republished() {
 
     // A brand-new branch publishes only its own RefFact (its commit is known).
     repo.branch("feature-d");
-    assert_eq!(published_facts(&repo), 1, "new branch publishes one RefFact");
+    assert_eq!(
+        published_facts(&repo),
+        1,
+        "new branch publishes one RefFact"
+    );
 }
 
 #[test]
