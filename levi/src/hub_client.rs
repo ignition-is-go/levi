@@ -21,8 +21,30 @@ pub const SEND_CHUNK: usize = 256;
 
 pub struct HubSession {
     pub client: MykoClient,
-    // Keep the runtime alive for the client's background tasks.
-    pub runtime: tokio::runtime::Runtime,
+    // Keep the runtime alive for the client's background tasks. `Option` so
+    // `Drop` can move it out and shut it down with a bound (see below).
+    runtime: Option<tokio::runtime::Runtime>,
+}
+
+/// Teardown is RAII, not something callers must remember: every `?` in the
+/// sync legs returns without reaching `close()`, and a session that outlives
+/// its owner keeps a live socket and reconnect loop (lv-10ea — in the
+/// 2026-07-21 hub flood a session leaked this way kept transmitting long
+/// after the code that made it had failed).
+///
+/// Only ever dropped from sync context (the CLI has no async callers);
+/// `shutdown_timeout` would panic inside a runtime.
+impl Drop for HubSession {
+    fn drop(&mut self) {
+        // Stop the reconnect loop first, so shutdown isn't racing a client
+        // that is busy re-establishing the connection it is losing.
+        self.client.set_address(None);
+        if let Some(runtime) = self.runtime.take() {
+            // Bounded: give the socket a beat to flush its close frame, but
+            // never block the process on a task that won't finish.
+            runtime.shutdown_timeout(Duration::from_millis(500));
+        }
+    }
 }
 
 pub fn ws_url(addr: &str) -> String {
@@ -59,7 +81,10 @@ impl HubSession {
             client.set_address(None);
             bail!("could not connect to hub at {addr} within {timeout:?}");
         }
-        Ok(Self { client, runtime })
+        Ok(Self {
+            client,
+            runtime: Some(runtime),
+        })
     }
 
     /// One-shot report: reports answer `None` until the server responds, so
@@ -189,9 +214,8 @@ impl HubSession {
         Ok(ids)
     }
 
-    pub fn close(self) {
-        self.client.set_address(None);
-        // Give the socket a beat to flush the close frame.
-        self.runtime.shutdown_timeout(Duration::from_millis(500));
-    }
+    /// Explicit teardown, for call sites that want to name it. Identical to
+    /// letting the session fall out of scope — `Drop` does the work, so the
+    /// error paths that never reach here are covered too.
+    pub fn close(self) {}
 }
