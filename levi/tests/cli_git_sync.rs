@@ -402,3 +402,55 @@ fn init_bails_when_remote_unreachable_unless_no_sync() {
         .success()
         .stdout(predicate::str::contains("initialized levi project"));
 }
+
+/// lv-1e92: a squash merge replaces the branch commit with a new one, so an
+/// anchor on the branch is never in main's ancestry and its task reads open
+/// forever. The branch usually still exists, so the orphan path (which needs
+/// the anchor unreachable from *every* ref) stays silent.
+#[test]
+fn squash_merged_anchor_suggests_the_squashed_sha() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fix the thing", &[]);
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_file("fix.txt", "the fix\n", "the fix");
+    repo.levi_ok(&["close", &id]);
+
+    // Squash-merge onto main, leaving `feature` (and its anchor) alive.
+    repo.checkout("main");
+    repo.git(&["merge", "-q", "--squash", "feature"]);
+    repo.git(&["commit", "-q", "-m", "fix the thing (#9)"]);
+    let squashed = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+
+    let out = repo.levi(&["ls", "--all"]).output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(&squashed[..8]),
+        "must name the squashed commit — stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("--anchor {}", &squashed[..8])),
+        "must suggest the re-anchor command — stderr: {stderr}"
+    );
+}
+
+/// The same detection must not fire for ordinary unmerged feature work:
+/// that anchor is legitimately absent from this history and the task is
+/// correctly open here.
+#[test]
+fn unmerged_feature_anchor_is_not_reported_as_squashed() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fix the thing", &[]);
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_file("fix.txt", "the fix\n", "the fix");
+    repo.levi_ok(&["close", &id]);
+    repo.checkout("main");
+
+    let out = repo.levi(&["ls", "--all"]).output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("squashed"),
+        "unmerged work must not be reported as squashed — stderr: {stderr}"
+    );
+}

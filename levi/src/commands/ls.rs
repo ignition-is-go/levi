@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use chrono::Utc;
 use levi_core::resolve::{Resolution, Status};
@@ -6,17 +8,25 @@ use serde_json::json;
 use crate::ctx::LeviCtx;
 use crate::output::{SCHEMA_LS, task_json, task_line};
 
-/// Warn about anchors orphaned by rebase/cherry-pick (spec §Anchoring rules).
-pub fn warn_orphaned_anchors<'a>(ctx: &LeviCtx, task_ids: impl Iterator<Item = &'a str>) {
+/// Warn about anchors orphaned by rebase/cherry-pick (spec §Anchoring rules)
+/// or landed here under a new sha by a squash merge (lv-1e92).
+///
+/// Only tasks that actually read open are considered: the warnings all end in
+/// "re-close with ...", which is wrong advice for a task whose status already
+/// resolves correctly — a re-anchored task keeps its superseded anchors in the
+/// log forever, and warning about those is pure noise.
+pub fn warn_orphaned_anchors<'a>(ctx: &LeviCtx, open_task_ids: impl Iterator<Item = &'a str>) {
     let mut anchors = Vec::new();
-    for id in task_ids {
+    for id in open_task_ids {
         for change in ctx.world.changes_for(id) {
             if let Some(sha) = &change.anchor_commit {
                 anchors.push(sha.clone());
             }
         }
     }
-    for orphan in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors) {
+    let mut warned: HashSet<String> = HashSet::new();
+    for orphan in crate::ancestors::orphaned_anchors(ctx.store.repo(), anchors.clone()) {
+        warned.insert(orphan.sha.clone());
         let sha = &orphan.sha[..8.min(orphan.sha.len())];
         match &orphan.rewritten_as {
             Some(new_sha) => eprintln!(
@@ -30,6 +40,19 @@ pub fn warn_orphaned_anchors<'a>(ctx: &LeviCtx, task_ids: impl Iterator<Item = &
                  affected tasks may show as open here. Re-run `levi close <id>` at the new HEAD.",
             ),
         }
+    }
+    // Squash/rebase merges keep the source branch alive, so the anchor stays
+    // reachable and the orphan pass above says nothing — but the change is in
+    // HEAD under a new sha, and the task reads open until it is re-anchored.
+    let unwarned = anchors.into_iter().filter(|sha| !warned.contains(sha));
+    for squashed in crate::ancestors::squashed_anchors(ctx.store.repo(), unwarned) {
+        let sha = &squashed.sha[..8.min(squashed.sha.len())];
+        let landed = &squashed.landed_as[..8.min(squashed.landed_as.len())];
+        eprintln!(
+            "warning: anchor {sha} is not in this history, but its change was squashed in \
+             as {landed} (same patch-id); affected tasks show as open here. \
+             Re-close with `levi close <id> --anchor {landed}`."
+        );
     }
 }
 
@@ -88,7 +111,12 @@ pub fn run(ctx: &mut LeviCtx, opts: LsOpts) -> Result<()> {
         (a.priority.rank(), a.created.as_str()).cmp(&(b.priority.rank(), b.created.as_str()))
     });
 
-    warn_orphaned_anchors(ctx, rows.iter().map(|t| &*t.id.0));
+    warn_orphaned_anchors(
+        ctx,
+        rows.iter()
+            .map(|t| &*t.id.0)
+            .filter(|id| statuses[*id].status == Status::Open),
+    );
 
     // Non-applying closes per open task: "the fix exists, just not here".
     let tips = crate::ancestors::BranchTips::new(ctx.store.repo());

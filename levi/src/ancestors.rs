@@ -178,9 +178,79 @@ fn patch_id(repo_dir: &std::path::Path, sha: &str) -> Option<String> {
 
 /// (patch-id, sha) pairs for the last `limit` commits on HEAD.
 fn recent_patch_ids(repo_dir: &std::path::Path, limit: usize) -> Vec<(String, String)> {
+    patch_ids_of(repo_dir, &["-n", &limit.to_string()])
+}
+
+/// An anchor that isn't in this history, but whose change landed here under
+/// a different sha — the signature of a squash merge (or a rebase-merge).
+#[derive(Debug, Clone)]
+pub struct SquashedAnchor {
+    pub sha: String,
+    pub landed_as: String,
+}
+
+/// Squash-merge detection (lv-1e92). `orphaned_anchors` only fires when an
+/// anchor is unreachable from *every* ref, but a squash merge typically
+/// leaves the source branch — and its anchor — alive, so the task silently
+/// reads open even though the fix is in HEAD under a new sha.
+///
+/// Scans only `merge-base(HEAD, anchor)..HEAD`, the window a squash could
+/// possibly have landed in, so the patch-id walk stays proportional to how
+/// far the branch diverged rather than to history size.
+pub fn squashed_anchors(
+    repo: &gix::Repository,
+    anchors: impl IntoIterator<Item = String>,
+) -> Vec<SquashedAnchor> {
+    let Ok(head) = repo.head_id() else {
+        return Vec::new();
+    };
+    let head = head.detach();
+    let repo_dir = repo
+        .workdir()
+        .unwrap_or_else(|| repo.git_dir())
+        .to_path_buf();
+
+    let mut found = Vec::new();
+    let mut seen: HashMap<String, ()> = HashMap::new();
+    for sha in anchors {
+        if seen.insert(sha.clone(), ()).is_some() {
+            continue;
+        }
+        let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else {
+            continue;
+        };
+        if repo.try_find_object(anchor).ok().flatten().is_none() {
+            continue;
+        }
+        // Already in this history: the close resolves normally, nothing to say.
+        let base = match repo.merge_base(head, anchor) {
+            Ok(base) => base.detach(),
+            Err(_) => continue,
+        };
+        if base == anchor {
+            continue;
+        }
+        let Some(anchor_pid) = patch_id(&repo_dir, &sha) else {
+            continue;
+        };
+        let range = format!("{base}..{head}");
+        let landed = patch_ids_of(&repo_dir, &[&range])
+            .into_iter()
+            .find(|(pid, candidate)| *pid == anchor_pid && *candidate != sha)
+            .map(|(_, candidate)| candidate);
+        if let Some(landed_as) = landed {
+            found.push(SquashedAnchor { sha, landed_as });
+        }
+    }
+    found
+}
+
+/// (patch-id, sha) pairs for whatever `git log -p` selection is given.
+fn patch_ids_of(repo_dir: &std::path::Path, log_args: &[&str]) -> Vec<(String, String)> {
     use std::process::{Command, Stdio};
     let Ok(log) = Command::new("git")
-        .args(["log", "-p", "--format=%H", "-n", &limit.to_string()])
+        .args(["log", "-p", "--format=%H"])
+        .args(log_args)
         .current_dir(repo_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
