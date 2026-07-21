@@ -110,8 +110,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
     // check; a dropped chunk stays out of the cache and is re-sent next run.
     while !commit_facts.is_empty() {
         let take = commit_facts.len().min(crate::hub_client::SEND_CHUNK);
-        let (events, shas): (Vec<MEvent>, Vec<String>) =
-            commit_facts.drain(..take).unzip();
+        let (events, shas): (Vec<MEvent>, Vec<String>) = commit_facts.drain(..take).unzip();
         session.send_events(events)?;
         session
             .query_at_least(
