@@ -19,18 +19,25 @@ fn within<F: FnOnce() + Send + 'static>(limit: Duration, what: &str, f: F) {
         f();
         let _ = tx.send(());
     });
-    assert!(rx.recv_timeout(limit).is_ok(), "{what} did not finish in {limit:?}");
+    assert!(
+        rx.recv_timeout(limit).is_ok(),
+        "{what} did not finish in {limit:?}"
+    );
 }
 
 #[test]
 fn dropped_session_tears_down_promptly() {
     let port = start_hub();
     let addr = format!("127.0.0.1:{port}");
-    within(Duration::from_secs(15), "dropping a connected HubSession", move || {
-        let session = HubSession::connect(&addr, Duration::from_secs(10)).expect("connects");
-        // No close(): exactly the shape of an error path returning via `?`.
-        drop(session);
-    });
+    within(
+        Duration::from_secs(15),
+        "dropping a connected HubSession",
+        move || {
+            let session = HubSession::connect(&addr, Duration::from_secs(10)).expect("connects");
+            // No close(): exactly the shape of an error path returning via `?`.
+            drop(session);
+        },
+    );
 }
 
 #[test]
@@ -39,10 +46,14 @@ fn dropped_session_survives_a_vanished_hub() {
     // dropped, so teardown must not wait on the socket coming back.
     let port = start_hub();
     let addr = format!("127.0.0.1:{port}");
-    within(Duration::from_secs(15), "dropping a reconnecting HubSession", move || {
-        let session = HubSession::connect(&addr, Duration::from_secs(10)).expect("connects");
-        drop(session);
-    });
+    within(
+        Duration::from_secs(15),
+        "dropping a reconnecting HubSession",
+        move || {
+            let session = HubSession::connect(&addr, Duration::from_secs(10)).expect("connects");
+            drop(session);
+        },
+    );
 }
 
 #[test]
