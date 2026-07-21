@@ -63,8 +63,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
     }
 
     // Walk ancestors, depth-capped, skipping already-published shas.
-    let mut new_shas: Vec<String> = Vec::new();
-    let mut events: Vec<MEvent> = ref_facts;
+    let mut commit_facts: Vec<(MEvent, String)> = Vec::new();
     let mut seen: HashSet<ObjectId> = HashSet::new();
     let mut frontier = roots;
     let mut depth = 0usize;
@@ -88,8 +87,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
                     project_id: project_id.clone(),
                     parents: parents.iter().map(|p| p.to_string()).collect(),
                 };
-                events.push(ctx.set_event(&fact));
-                new_shas.push(sha);
+                commit_facts.push((ctx.set_event(&fact), sha));
             }
             // Even for already-published commits keep walking: their parents
             // may be unpublished (e.g. cache from a shallow earlier run).
@@ -99,46 +97,57 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         depth += 1;
     }
 
-    let fact_count = events.len();
-    session.send_events(events)?;
+    let fact_count = ref_facts.len() + commit_facts.len();
+    session.send_events(ref_facts)?;
 
-    // Verify the hub actually has every new sha before recording it in the
-    // dedup cache — a dropped batch would otherwise never be re-sent from
-    // this checkout. Presence is checked by id (not by count) so facts
-    // concurrently published by another machine don't confuse the check.
-    if !new_shas.is_empty() {
+    // Publish commit facts chunk by chunk: send, verify the hub holds every
+    // sha, record the chunk in the dedup cache — then the next chunk. A
+    // failure mid-way keeps the verified chunks cached, so a retry resumes
+    // where this run stopped instead of re-sending the whole history
+    // (lv-b69e: a first publication from a large repo never survived the
+    // all-or-nothing batch). Presence is checked by id (not by count) so
+    // facts concurrently published by another machine don't confuse the
+    // check; a dropped chunk stays out of the cache and is re-sent next run.
+    while !commit_facts.is_empty() {
+        let take = commit_facts.len().min(crate::hub_client::SEND_CHUNK);
+        let (events, shas): (Vec<MEvent>, Vec<String>) =
+            commit_facts.drain(..take).unzip();
+        session.send_events(events)?;
         session
             .query_at_least(
                 levi_core::GetCommitFactsByIds {
-                    ids: new_shas.iter().map(|s| s.as_str().into()).collect(),
+                    ids: shas.iter().map(|s| s.as_str().into()).collect(),
                 },
-                new_shas.len(),
+                shas.len(),
                 Duration::from_secs(10),
             )
             .map_err(|e| {
                 anyhow::anyhow!(
-                    "hub did not acknowledge all {} new commit facts; \
+                    "hub did not acknowledge {} commit facts; \
                      not recording them as published: {e}",
-                    new_shas.len()
+                    shas.len()
                 )
             })?;
-    }
-
-    if !new_shas.is_empty() {
-        if let Some(dir) = cache_path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&cache_path)
-        {
-            for sha in &new_shas {
-                let _ = writeln!(f, "{sha}");
-            }
-        }
+        append_cache(&cache_path, &shas);
     }
     Ok(fact_count)
+}
+
+/// Append verified shas to the dedup cache. Best-effort (matching the
+/// original behavior): a cache write failure only costs a re-send later.
+fn append_cache(cache_path: &std::path::Path, shas: &[String]) {
+    if let Some(dir) = cache_path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(cache_path)
+    {
+        for sha in shas {
+            let _ = writeln!(f, "{sha}");
+        }
+    }
 }
 
 /// Small helper for `watch`/tests: a default per-leg timeout.

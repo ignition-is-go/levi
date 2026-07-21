@@ -14,6 +14,11 @@ use myko::query::QueryParams;
 use myko::report::ReportParams;
 use myko::wire::MEvent;
 
+/// Events per send batch. Bounds every barrier wait by chunk size instead
+/// of total batch size; sized so a chunk clears a slow hub's 10s barrier
+/// with generous headroom (~5ms/event observed on the hosted hub ⇒ ~1.3s).
+pub const SEND_CHUNK: usize = 256;
+
 pub struct HubSession {
     pub client: MykoClient,
     // Keep the runtime alive for the client's background tasks.
@@ -132,17 +137,23 @@ impl HubSession {
     }
 
     /// Send events and barrier on a round-trip so they're processed before we
-    /// return (messages on one connection are handled in order).
-    pub fn send_events(&self, events: Vec<MEvent>) -> Result<()> {
-        if events.is_empty() {
-            return Ok(());
+    /// return (messages on one connection are handled in order). Sent in
+    /// SEND_CHUNK-sized chunks, each with its own barrier: the barrier can't
+    /// answer until the hub consumes everything ahead of it on the
+    /// connection, so a single batch-wide barrier would scale its wait with
+    /// batch size and time out on large publications (lv-b69e).
+    pub fn send_events(&self, mut events: Vec<MEvent>) -> Result<()> {
+        while !events.is_empty() {
+            let take = events.len().min(SEND_CHUNK);
+            let chunk: Vec<MEvent> = events.drain(..take).collect();
+            self.client
+                .send_event_batch(chunk)
+                .map_err(|e| anyhow::anyhow!("event batch send failed: {e}"))?;
+            // Round-trip barrier: a report response means the chunk was
+            // consumed.
+            let _: levi_core::ProjectCount =
+                self.report_once(levi_core::CountAllProjects {}, Duration::from_secs(10))?;
         }
-        self.client
-            .send_event_batch(events)
-            .map_err(|e| anyhow::anyhow!("event batch send failed: {e}"))?;
-        // Round-trip barrier: a report response means the batch was consumed.
-        let _: levi_core::ProjectCount =
-            self.report_once(levi_core::CountAllProjects {}, Duration::from_secs(10))?;
         Ok(())
     }
 

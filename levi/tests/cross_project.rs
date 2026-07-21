@@ -4,44 +4,10 @@
 
 mod common;
 
-use std::net::TcpListener;
-use std::time::{Duration, Instant};
-
 use common::TestRepo;
+use common::start_hub;
 use predicates::prelude::*;
 use serde_json::Value;
-
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
-fn start_hub() -> u16 {
-    let port = free_port();
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            levi_core::link();
-            let server = myko_server::CellServer::builder()
-                .with_bind_addr(([127, 0, 0, 1], port).into())
-                .build();
-            if let Err(e) = server.run().await {
-                eprintln!("in-process hub died: {e}");
-            }
-        });
-    });
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            return port;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    panic!("in-process hub did not start");
-}
 
 /// Two independent projects (their own repos), one hub. Returns (a, b).
 fn two_projects(hub_port: u16) -> (TestRepo, TestRepo) {
