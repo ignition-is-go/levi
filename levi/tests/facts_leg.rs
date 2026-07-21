@@ -29,6 +29,58 @@ fn grow_history(repo: &TestRepo, n: usize) {
     repo.git(&["update-ref", "refs/heads/main", &parent]);
 }
 
+/// The `published N fact(s)` count from a `levi sync --no-git` run.
+fn published_facts(repo: &TestRepo) -> usize {
+    let out = repo.levi_ok(&["sync", "--no-git"]);
+    let line = out
+        .lines()
+        .find(|l| l.contains("published"))
+        .unwrap_or_else(|| panic!("no hub line in sync output: {out}"));
+    line.split("published ")
+        .nth(1)
+        .and_then(|s| s.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("cannot parse fact count from: {line}"))
+}
+
+/// lv-ef44: an unchanged branch head must not be republished on every sync.
+/// Before the ref cache, a repo published one RefFact per branch per sync
+/// forever — 95 events per `levi add` on a 95-branch repo.
+#[test]
+fn unchanged_branch_heads_are_not_republished() {
+    let hub_port = start_hub();
+    let repo = TestRepo::new();
+    repo.set_hub(&format!("127.0.0.1:{hub_port}"));
+    repo.init();
+    for b in ["feature-a", "feature-b", "feature-c"] {
+        repo.branch(b);
+    }
+
+    // First sync publishes the initial commit + 4 branch heads.
+    assert!(published_facts(&repo) >= 4, "first sync publishes the refs");
+
+    // Nothing changed: an idle repo must publish nothing at all.
+    assert_eq!(
+        published_facts(&repo),
+        0,
+        "an idle repo republished facts — the ref cache is not holding"
+    );
+    assert_eq!(published_facts(&repo), 0, "still nothing on a third run");
+
+    // A moved head is published again (exactly one RefFact + one CommitFact).
+    repo.commit("advance main");
+    assert_eq!(
+        published_facts(&repo),
+        2,
+        "a moved branch head must republish its RefFact and the new commit"
+    );
+    assert_eq!(published_facts(&repo), 0, "then settle again");
+
+    // A brand-new branch publishes only its own RefFact (its commit is known).
+    repo.branch("feature-d");
+    assert_eq!(published_facts(&repo), 1, "new branch publishes one RefFact");
+}
+
 #[test]
 fn facts_publish_chunks_large_history() {
     let hub_port = start_hub();
