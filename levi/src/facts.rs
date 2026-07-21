@@ -1,13 +1,16 @@
 //! Facts leg (spec §Sync leg 3): publish CommitFacts (sha -> parents) for
 //! ancestors of anchor commits and current branch heads, depth-capped, plus
 //! RefFacts for branch tips. Published to the hub only (spec deviation 6);
-//! deduped against `.git/levi/facts-published`.
+//! deduped against `.git/levi/facts-published` (commits, immutable) and
+//! `.git/levi/refs-published` (branch heads, which move).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
+use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Result, bail};
+use chrono::{DateTime, Utc};
 use gix::ObjectId;
 use levi_core::materialize::World;
 use levi_core::{CommitFact, RefFact, ref_fact_id};
@@ -17,6 +20,13 @@ use crate::ctx::LeviCtx;
 use crate::hub_client::HubSession;
 
 const DEPTH_CAP: usize = 2000;
+
+/// Republish an unchanged branch head at most this often. A RefFact whose
+/// head hasn't moved carries no new information, but `observed` feeds the
+/// cross-project ladder's "closed as of X" display — freezing it forever
+/// would make foreign status read staler than it is, so confirmations are
+/// refreshed on this interval rather than on every sync (lv-ef44).
+const REF_REFRESH: chrono::TimeDelta = chrono::TimeDelta::hours(1);
 
 pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usize> {
     let Some(project) = &world.project else {
@@ -40,6 +50,15 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
             roots.push(oid);
         }
     }
+    // Branch heads: walked as roots every run, but only *published* when
+    // the head moved or the last confirmation aged out. Republishing every
+    // branch on every sync appended N events per sync forever — with the
+    // opportunistic sync that fires after each mutation, a 95-branch repo
+    // wrote 95 events per `levi add` (lv-ef44).
+    let refs_cache_path = repo.common_dir().join("levi").join("refs-published");
+    let mut ref_state = read_ref_cache(&refs_cache_path);
+    let mut ref_state_changed = false;
+    let now = Utc::now();
     if let Ok(refs) = repo.references()
         && let Ok(iter) = refs.prefixed("refs/heads/")
     {
@@ -50,14 +69,24 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
             if let Ok(id) = reference.peel_to_id() {
                 let head = id.detach();
                 roots.push(head);
+                let head_hex = head.to_string();
+                let confirmed = ref_state.get(&branch).is_some_and(|(cached, observed)| {
+                    *cached == head_hex && is_recent(observed, now)
+                });
+                if confirmed {
+                    continue;
+                }
+                let observed = LeviCtx::now();
                 let fact = RefFact {
                     id: ref_fact_id(&project_id, &branch).into(),
                     project_id: project_id.clone(),
-                    branch,
-                    head: head.to_string(),
-                    observed: LeviCtx::now(),
+                    branch: branch.clone(),
+                    head: head_hex.clone(),
+                    observed: observed.clone(),
                 };
                 ref_facts.push(ctx.set_event(&fact));
+                ref_state.insert(branch, (head_hex, observed));
+                ref_state_changed = true;
             }
         }
     }
@@ -99,6 +128,13 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
 
     let fact_count = ref_facts.len() + commit_facts.len();
     session.send_events(ref_facts)?;
+    // Record the confirmations only once the hub has consumed them (the
+    // send barrier). Unlike commit facts there is no by-id query to verify
+    // RefFacts against, so a lost one leaves the hub's head stale until the
+    // branch moves or REF_REFRESH elapses — which is exactly what bounds it.
+    if ref_state_changed {
+        write_ref_cache(&refs_cache_path, &ref_state);
+    }
 
     // Publish commit facts chunk by chunk: send, verify the hub holds every
     // sha, record the chunk in the dedup cache — then the next chunk. A
@@ -130,6 +166,48 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         append_cache(&cache_path, &shas);
     }
     Ok(fact_count)
+}
+
+/// Was this confirmation made recently enough to skip republishing?
+/// An unparseable timestamp counts as stale, so a corrupted cache
+/// republishes rather than silently withholding facts from the hub.
+fn is_recent(observed: &str, now: DateTime<Utc>) -> bool {
+    DateTime::parse_from_rfc3339(observed)
+        .map(|t| now.signed_duration_since(t.with_timezone(&Utc)) < REF_REFRESH)
+        .unwrap_or(false)
+}
+
+/// branch -> (head sha, when we last published that pairing). Tab-separated;
+/// git ref names cannot contain tabs or newlines, so the format is
+/// unambiguous. A malformed line is dropped, costing one republish.
+fn read_ref_cache(path: &Path) -> BTreeMap<String, (String, String)> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            match (parts.next(), parts.next(), parts.next()) {
+                (Some(branch), Some(head), Some(observed)) if !branch.is_empty() => {
+                    Some((branch.to_string(), (head.to_string(), observed.to_string())))
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Rewritten whole (one line per branch, so it stays small) rather than
+/// appended. Best-effort: a write failure costs a republish next run.
+fn write_ref_cache(path: &Path, state: &BTreeMap<String, (String, String)>) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let body: String = state
+        .iter()
+        .map(|(branch, (head, observed))| format!("{branch}\t{head}\t{observed}\n"))
+        .collect();
+    let _ = std::fs::write(path, body);
 }
 
 /// Append verified shas to the dedup cache. Best-effort (matching the
