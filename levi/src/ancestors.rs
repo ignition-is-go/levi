@@ -7,10 +7,16 @@ use std::collections::HashMap;
 use gix::ObjectId;
 use levi_core::resolve::{AncestorSet, Ancestry};
 
+/// How many recent commits per head to consider for squash/rebase patch-id
+/// matching (spec 2026-07-22). CLI-local; the fact publisher has its own knob.
+const PATCH_ID_WINDOW: usize = 300;
+
 pub struct GixAncestors<'r> {
     repo: &'r gix::Repository,
     head: Option<ObjectId>,
     cache: HashMap<String, Ancestry>,
+    /// Lazily-built patch-id set of head's recent history (spec 2026-07-22).
+    head_patches: Option<std::collections::HashSet<String>>,
 }
 
 impl<'r> GixAncestors<'r> {
@@ -26,35 +32,60 @@ impl<'r> GixAncestors<'r> {
             repo,
             head,
             cache: HashMap::new(),
+            head_patches: None,
         }
     }
 
-    fn lookup(&self, sha: &str) -> Ancestry {
+    fn lookup(&mut self, sha: &str) -> Ancestry {
         let Some(head) = self.head else {
-            // Unborn HEAD: nothing is an ancestor, and we know it exactly.
             return Ancestry::No;
         };
         let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else {
             return Ancestry::Unknown;
         };
-        // An anchor we don't have locally can't be judged: unfetched history.
         if self.repo.try_find_object(anchor).ok().flatten().is_none() {
             return Ancestry::Unknown;
         }
         if anchor == head {
             return Ancestry::Yes;
         }
-        match self.repo.merge_base(head, anchor) {
-            Ok(base) => {
-                if base.detach() == anchor {
-                    Ancestry::Yes
-                } else {
-                    Ancestry::No
-                }
-            }
-            // No common ancestor at all.
-            Err(_) => Ancestry::No,
+        let exact = match self.repo.merge_base(head, anchor) {
+            Ok(base) => base.detach() == anchor,
+            Err(_) => false,
+        };
+        if exact {
+            return Ancestry::Yes;
         }
+        // Squash/rebase fallback: the exact sha isn't an ancestor, but a
+        // patch-id-equivalent commit in head's recent history may be.
+        if self.anchor_rewritten(sha) {
+            return Ancestry::Rewritten;
+        }
+        Ancestry::No
+    }
+
+    fn anchor_rewritten(&mut self, sha: &str) -> bool {
+        let repo_dir = self
+            .repo
+            .workdir()
+            .unwrap_or_else(|| self.repo.git_dir())
+            .to_path_buf();
+        if self.head_patches.is_none() {
+            let head_hex = self.head.map(|h| h.to_string());
+            let set = head_hex
+                .map(|h| {
+                    recent_patch_ids_of(&repo_dir, &h, PATCH_ID_WINDOW)
+                        .into_iter()
+                        .map(|(patch, _sha)| patch)
+                        .collect()
+                })
+                .unwrap_or_default();
+            self.head_patches = Some(set);
+        }
+        let Some(anchor_patch) = patch_id(&repo_dir, sha) else {
+            return false;
+        };
+        self.head_patches.as_ref().unwrap().contains(&anchor_patch)
     }
 }
 
@@ -178,9 +209,27 @@ fn patch_id(repo_dir: &std::path::Path, sha: &str) -> Option<String> {
 
 /// (patch-id, sha) pairs for the last `limit` commits on HEAD.
 fn recent_patch_ids(repo_dir: &std::path::Path, limit: usize) -> Vec<(String, String)> {
+    patch_ids_of(repo_dir, &["-n", &limit.to_string()])
+}
+
+/// (patch-id, sha) pairs for the last `limit` commits reachable from `head`.
+fn recent_patch_ids_of(
+    repo_dir: &std::path::Path,
+    head: &str,
+    limit: usize,
+) -> Vec<(String, String)> {
+    patch_ids_of(repo_dir, &["-n", &limit.to_string(), head])
+}
+
+/// Shared `git log -p <extra_args> | git patch-id --stable` helper. Never
+/// hard-errors: any git failure yields an empty set (no false patch-id
+/// matches, just a missed fallback).
+fn patch_ids_of(repo_dir: &std::path::Path, extra_args: &[&str]) -> Vec<(String, String)> {
     use std::process::{Command, Stdio};
+    let mut args = vec!["log", "-p", "--format=%H"];
+    args.extend_from_slice(extra_args);
     let Ok(log) = Command::new("git")
-        .args(["log", "-p", "--format=%H", "-n", &limit.to_string()])
+        .args(&args)
         .current_dir(repo_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

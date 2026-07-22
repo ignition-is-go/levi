@@ -402,3 +402,34 @@ fn init_bails_when_remote_unreachable_unless_no_sync() {
         .success()
         .stdout(predicate::str::contains("initialized levi project"));
 }
+
+/// A squash-merged anchor now resolves the task CLOSED (squashed), not just a
+/// warning (spec 2026-07-22).
+#[test]
+fn squash_merged_task_resolves_closed() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fix the thing", &[]);
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_file("fix.txt", "the fix\n", "the fix");
+    repo.levi_ok(&["close", &id]);
+
+    // Squash-merge onto main (the anchor's sha never reaches main).
+    repo.checkout("main");
+    repo.git(&["merge", "-q", "--squash", "feature"]);
+    repo.git(&["commit", "-q", "-m", "fix the thing (#9)"]);
+
+    // The task resolves closed, labeled squashed.
+    let ls = repo.levi_json(&["ls", "--all", "--json"]);
+    let task = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == id.as_str())
+        .unwrap();
+    assert_eq!(
+        task["status"], "closed",
+        "squash-merged task must read closed"
+    );
+    assert_eq!(task["resolution"], "squashed");
+}
