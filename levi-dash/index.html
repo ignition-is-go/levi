@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>levi</title>
   <link data-trunk rel="rust" data-wasm-opt="z" />
+  <!-- The design system (pulse BaseStyle) specifies Montserrat; without this
+       the whole UI falls back to a system font and the type scale reads off. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;510;600;700&display=swap"
+    rel="stylesheet"
+  />
   <style>
     /* Sizing chain for mullion's full-height pane root; everything else
        comes from pulse BaseStyle + mullion's injected styles. */
