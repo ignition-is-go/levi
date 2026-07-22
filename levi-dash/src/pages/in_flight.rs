@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use leptos::prelude::*;
 use levi_core::*;
 use myko_leptos::live_query;
-use pulse_leptos_ui::{Badge, BadgeVariant, Disclosure, EmptyState};
+use pulse_leptos_ui::{Badge, BadgeVariant, Disclosure, EmptyState, tokens};
 
 use crate::resolve_client::claim_live;
 
@@ -53,30 +53,47 @@ pub fn InFlight() -> impl IntoView {
                             .into_iter()
                             .map(|(machine, worktrees)| {
                                 view! {
-                                    <div style="margin-left:14px;margin-bottom:8px;">
+                                    <div style=format!(
+                                        "margin-left:{};margin-bottom:{};",
+                                        tokens::SPACING_MD, tokens::SPACING_SM,
+                                    )>
                                         <div class="label">{machine}</div>
                                         {worktrees
                                             .into_iter()
                                             .map(|(worktree, claims)| {
                                                 view! {
-                                                    <div style="margin-left:14px;">
-                                                        <div class="text-muted" style="font-size:11px;">{worktree}</div>
+                                                    <div style=format!("margin-left:{};", tokens::SPACING_MD)>
+                                                        {
+                                                            let wt = worktree.clone();
+                                                            view! {
+                                                                <div class="text-muted trunc" title=worktree
+                                                                     style=format!("font-size:{};", tokens::FONT_SIZE_2XS)>
+                                                                    {wt}
+                                                                </div>
+                                                            }
+                                                        }
                                                         {claims
                                                             .into_iter()
                                                             .map(|claim| {
                                                                 let live = claim_live(&claim);
+                                                                let title = titles
+                                                                    .get(&*claim.task_id)
+                                                                    .cloned()
+                                                                    .unwrap_or_else(|| format!("lv-{}", &claim.task_id[..6.min(claim.task_id.len())]));
+                                                                let time = claim.created.get(..19).unwrap_or("").replace('T', " ");
+                                                                let tip = title.clone();
                                                                 view! {
-                                                                    <div style=format!(
-                                                                        "display:flex;gap:10px;align-items:baseline;padding:2px 0;{}",
+                                                                    <div class="levi-row" style=format!(
+                                                                        "padding:{} 0;{}",
+                                                                        tokens::SPACING_2XS,
                                                                         if live { "" } else { "opacity:.45;" }
                                                                     )>
-                                                                        <span>{titles
-                                                                            .get(&*claim.task_id)
-                                                                            .cloned()
-                                                                            .unwrap_or_else(|| claim.task_id[..8.min(claim.task_id.len())].to_string())}</span>
-                                                                        <span class="text-muted" style="font-size:11px;">
-                                                                            {claim.created.get(..19).unwrap_or("").to_string()}
-                                                                        </span>
+                                                                        <span class="trunc" title=tip
+                                                                              style="flex:1;">{title}</span>
+                                                                        <span class="text-muted" style=format!(
+                                                                            "font-family:{};font-size:{};white-space:nowrap;",
+                                                                            tokens::FONT_MONO, tokens::FONT_SIZE_2XS,
+                                                                        )>{time}</span>
                                                                         {(!live).then(|| view! {
                                                                             <Badge variant=BadgeVariant::Warning>"expired"</Badge>
                                                                         })}
@@ -100,6 +117,8 @@ pub fn InFlight() -> impl IntoView {
     };
 
     view! {
-        <div style="padding:12px;height:100%;overflow-y:auto;">{grouped}</div>
+        <div style=format!("padding:{};height:100%;overflow-y:auto;", tokens::SPACING_MD)>
+            {grouped}
+        </div>
     }
 }

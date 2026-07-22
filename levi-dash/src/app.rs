@@ -196,6 +196,16 @@ pub fn App() -> impl IntoView {
 
     view! {
         <style>{base_css}</style>
+        // Layout-only utilities (no color/type opinions — those stay pulse's):
+        // one-line truncation and a subtle hover for clickable rows.
+        <style>
+            ".trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}\
+             .levi-row{display:flex;align-items:center;gap:0.5rem;min-width:0;}\
+             .levi-rowlink{cursor:pointer;border-radius:0.25rem;}\
+             .levi-rowlink:hover{background:oklch(1 0 0 / 0.04);}\
+             .levi-fill{flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:0;}\
+             .levi-fill .pane-content{flex:1;min-height:0;overflow-y:auto;}"
+        </style>
         <MullionProvider
             initial_tree=initial_tree
             categories=categories()

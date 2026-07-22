@@ -145,23 +145,30 @@ pub fn Browser() -> impl IntoView {
                     Priority::P1 => BadgeVariant::Warning,
                     _ => BadgeVariant::Neutral,
                 };
+                let title_attr = title.clone();
                 view! {
                     <div
+                        class="levi-row levi-rowlink"
                         on:click=open_drawer
                         style=format!(
-                            "display:flex;gap:10px;align-items:center;padding:5px 8px;\
-                             cursor:pointer;border-bottom:1px solid {};",
-                            tokens::BORDER
+                            "padding:{} {};border-bottom:1px solid {};",
+                            tokens::SPACING_XS, tokens::SPACING_SM, tokens::BORDER,
                         )
                     >
-                        <span class="text-muted" style="font-family:var(--font-mono);font-size:11px;">
+                        <span class="text-muted" style=format!(
+                            "font-family:{};font-size:{};white-space:nowrap;",
+                            tokens::FONT_MONO, tokens::FONT_SIZE_XS,
+                        )>
                             {resolve_client::short_id(&all_ids, &id)}
                         </span>
                         <Badge variant=priority_variant>{priority.label()}</Badge>
                         <Status variant=status_variant>{status_label}</Status>
-                        <span style="flex:1;">{title}</span>
+                        <span class="trunc" title=title_attr style="flex:1;">{title}</span>
                         {(!labels.is_empty()).then(|| view! {
-                            <span class="text-muted" style="font-size:11px;">
+                            <span class="text-muted" style=format!(
+                                "font-size:{};white-space:nowrap;",
+                                tokens::FONT_SIZE_XS,
+                            )>
                                 {format!("[{}]", labels.join(", "))}
                             </span>
                         })}
