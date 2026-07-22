@@ -57,8 +57,10 @@ pub fn run(ctx: &LeviCtx, opts: ForeignLsOpts) -> Result<()> {
     };
 
     // Pull tasks + status changes once, hub-wide, then resolve per project.
-    let tcount: levi_core::TaskCount =
-        session.report_once(levi_core::CountTasks(levi_core::PartialTask::default()), TIMEOUT)?;
+    let tcount: levi_core::TaskCount = session.report_once(
+        levi_core::CountTasks(levi_core::PartialTask::default()),
+        TIMEOUT,
+    )?;
     let tasks: Vec<levi_core::Task> = session
         .query_at_least(
             levi_core::GetTasksByQuery(levi_core::PartialTask::default()),

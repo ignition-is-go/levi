@@ -37,7 +37,9 @@ pub fn statuses_unanchored(
         .map(|t| {
             let id = t.id.to_string();
             let mut mine = by_task.get(id.as_str()).cloned().unwrap_or_default();
-            mine.sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
+            mine.sort_by(|a, b| {
+                (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0))
+            });
             let mut status = Status::Open;
             let mut ever_closed = false;
             for c in &mine {
@@ -97,8 +99,11 @@ pub fn statuses_for_project(
         .filter(|t| t.project_id == project_id)
         .map(|t| {
             let id = t.id.to_string();
-            let mine: Vec<&StatusChange> =
-                sorted.iter().copied().filter(|c| *c.task_id == id).collect();
+            let mine: Vec<&StatusChange> = sorted
+                .iter()
+                .copied()
+                .filter(|c| *c.task_id == id)
+                .collect();
             let resolved = match &mut anc {
                 Some(anc) => effective_status(&mine, anc, Resolution::Facts),
                 None => {
@@ -165,7 +170,13 @@ mod tests {
         let tasks = vec![task("t1", "p")];
         // An anchored close: statuses_unanchored must not need the anchor's
         // ancestry — it reports Closed + Partial regardless.
-        let changes = vec![change("c1", "t1", "p", StatusKind::Closed, "2026-02-01T00:00:00Z")];
+        let changes = vec![change(
+            "c1",
+            "t1",
+            "p",
+            StatusKind::Closed,
+            "2026-02-01T00:00:00Z",
+        )];
         let got = statuses_unanchored(&tasks, &changes, "p");
         assert_eq!(got["t1"].status, Status::Closed);
         assert_eq!(got["t1"].resolution, Resolution::Partial);
@@ -176,7 +187,13 @@ mod tests {
         let tasks = vec![task("t1", "p")];
         let changes = vec![
             change("c1", "t1", "p", StatusKind::Closed, "2026-02-01T00:00:00Z"),
-            change("c2", "t1", "p", StatusKind::Reopened, "2026-03-01T00:00:00Z"),
+            change(
+                "c2",
+                "t1",
+                "p",
+                StatusKind::Reopened,
+                "2026-03-01T00:00:00Z",
+            ),
         ];
         let got = statuses_unanchored(&tasks, &changes, "p");
         assert_eq!(got["t1"].status, Status::Open);

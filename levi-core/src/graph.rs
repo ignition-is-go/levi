@@ -119,10 +119,7 @@ pub fn build(
                 project_id: t.project_id.clone(),
                 title: t.title.clone(),
                 priority: t.priority,
-                status: statuses
-                    .get(id)
-                    .map(|s| s.status)
-                    .unwrap_or(Status::Open),
+                status: statuses.get(id).map(|s| s.status).unwrap_or(Status::Open),
                 layer: layer[id],
                 stub: false,
             },
@@ -256,12 +253,16 @@ pub fn build_from_live(
     let projects: BTreeSet<&str> = tasks.iter().map(|t| t.project_id.as_str()).collect();
     let mut statuses = BTreeMap::new();
     for pid in projects {
-        statuses.extend(crate::crossproject::statuses_unanchored(&tasks, &changes, pid));
+        statuses.extend(crate::crossproject::statuses_unanchored(
+            &tasks, &changes, pid,
+        ));
     }
     let task_map: BTreeMap<String, Task> =
         tasks.into_iter().map(|t| (t.id.to_string(), t)).collect();
-    let dep_map: BTreeMap<String, Dependency> =
-        deps.iter().map(|d| (d.id.to_string(), (**d).clone())).collect();
+    let dep_map: BTreeMap<String, Dependency> = deps
+        .iter()
+        .map(|d| (d.id.to_string(), (**d).clone()))
+        .collect();
     build(&task_map, &dep_map, &statuses)
 }
 
@@ -300,7 +301,10 @@ mod tests {
     fn open(id: &str) -> (String, ResolvedStatus) {
         (
             id.into(),
-            ResolvedStatus { status: Status::Open, resolution: Resolution::Exact },
+            ResolvedStatus {
+                status: Status::Open,
+                resolution: Resolution::Exact,
+            },
         )
     }
 
@@ -328,7 +332,12 @@ mod tests {
     #[test]
     fn diamond_takes_longest_path() {
         // a->b, a->c, b->d, c->d : d must be layer 2 (via either arm).
-        let tasks = tasks_of(vec![task("a", "p"), task("b", "p"), task("c", "p"), task("d", "p")]);
+        let tasks = tasks_of(vec![
+            task("a", "p"),
+            task("b", "p"),
+            task("c", "p"),
+            task("d", "p"),
+        ]);
         let deps = deps_of(vec![
             dep("1", "a", "b"),
             dep("2", "a", "c"),
@@ -368,7 +377,10 @@ mod tests {
         let statuses = [
             (
                 "a".to_string(),
-                ResolvedStatus { status: Status::Closed, resolution: Resolution::Facts },
+                ResolvedStatus {
+                    status: Status::Closed,
+                    resolution: Resolution::Facts,
+                },
             ),
             open("b"),
         ]
@@ -388,7 +400,10 @@ mod tests {
         let statuses = [open("local")].into_iter().collect();
         let g = build(&tasks, &deps, &statuses);
         assert_eq!(g.edges[0].blocker_project_id.as_deref(), Some("upstream"));
-        assert_eq!(g.edges[0].via.as_deref(), Some("cargo: crates.io myko >=4.24.4"));
+        assert_eq!(
+            g.edges[0].via.as_deref(),
+            Some("cargo: crates.io myko >=4.24.4")
+        );
         // The foreign blocker isn't a known task -> stub node.
         let stub = g.nodes.iter().find(|n| n.task_id == "foreign").unwrap();
         assert!(stub.stub);
@@ -398,7 +413,11 @@ mod tests {
     #[test]
     fn no_dependencies_yields_empty_graph_all_unconnected() {
         let tasks = tasks_of(vec![task("a", "p"), task("b", "p")]);
-        let g = build(&tasks, &deps_of(vec![]), &[open("a"), open("b")].into_iter().collect());
+        let g = build(
+            &tasks,
+            &deps_of(vec![]),
+            &[open("a"), open("b")].into_iter().collect(),
+        );
         assert!(g.nodes.is_empty());
         assert!(g.edges.is_empty());
         assert_eq!(g.unconnected.len(), 2);

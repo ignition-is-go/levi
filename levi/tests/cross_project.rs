@@ -337,11 +337,22 @@ fn ls_project_lists_foreign_tasks_and_ref_round_trips() {
     assert_eq!(row["project"], "upstream");
     let the_ref = row["ref"].as_str().unwrap().to_string();
     assert!(the_ref.starts_with("upstream/lv-"), "ref: {the_ref}");
-    assert!(the_ref.contains(&b_task[..8]), "ref must name the task: {the_ref}");
+    assert!(
+        the_ref.contains(&b_task[..8]),
+        "ref must name the task: {the_ref}"
+    );
 
     // The ref is accepted verbatim by `dep add --on`.
     let local = a.add("drop workaround once upstream ships", &[]);
-    a.levi_ok(&["dep", "add", &local, "--on", &the_ref, "--via", "cargo: crates.io"]);
+    a.levi_ok(&[
+        "dep",
+        "add",
+        &local,
+        "--on",
+        &the_ref,
+        "--via",
+        "cargo: crates.io",
+    ]);
     let show = a.levi_json(&["show", &local, "--json"]);
     assert_eq!(
         show["blocked_by"][0]["id"].as_str().unwrap(),
@@ -406,7 +417,15 @@ fn issue_graph_report_is_computed_on_the_hub() {
         .unwrap()
         .to_string();
     let blocked = a.add("drop workaround", &[]);
-    a.levi_ok(&["dep", "add", &blocked, "--on", &the_ref, "--via", "cargo: crates.io"]);
+    a.levi_ok(&[
+        "dep",
+        "add",
+        &blocked,
+        "--on",
+        &the_ref,
+        "--via",
+        "cargo: crates.io",
+    ]);
     a.levi_ok(&["sync", "--no-git"]);
 
     // Ask the hub to compute the graph.
@@ -416,13 +435,22 @@ fn issue_graph_report_is_computed_on_the_hub() {
     )
     .expect("connect to hub");
     let out: levi_core::graph::IssueGraphOut = session
-        .report_once(levi_core::graph::IssueGraphReport {}, Duration::from_secs(10))
+        .report_once(
+            levi_core::graph::IssueGraphReport {},
+            Duration::from_secs(10),
+        )
         .expect("graph report");
     let g = out.graph;
 
     // Exactly the two connected tasks are nodes; the edge carries the via.
-    assert!(g.nodes.iter().any(|n| n.task_id == blocker), "blocker node present");
-    assert!(g.nodes.iter().any(|n| n.task_id == blocked), "blocked node present");
+    assert!(
+        g.nodes.iter().any(|n| n.task_id == blocker),
+        "blocker node present"
+    );
+    assert!(
+        g.nodes.iter().any(|n| n.task_id == blocked),
+        "blocked node present"
+    );
     let edge = g
         .edges
         .iter()

@@ -159,7 +159,11 @@ fn render_svg(g: &IssueGraph, colors: &[(String, String)]) -> String {
         let x2 = to.x;
         let y2 = to.y + NODE_H / 2.0;
         let mid = (x1 + x2) / 2.0;
-        let dash = if e.resolved { r#" stroke-dasharray="5 4""# } else { "" };
+        let dash = if e.resolved {
+            r#" stroke-dasharray="5 4""#
+        } else {
+            ""
+        };
         let stroke = if e.resolved { "#b8b7b2" } else { "#eb6834" };
         let via = e.via.as_deref().unwrap_or("");
         let title = if e.blocker_project_id.is_some() && !via.is_empty() {
@@ -182,7 +186,11 @@ fn render_svg(g: &IssueGraph, colors: &[(String, String)]) -> String {
         } else {
             (0.16, "")
         };
-        let stub_stroke = if n.stub { r#" stroke-dasharray="4 3""# } else { "" };
+        let stub_stroke = if n.stub {
+            r#" stroke-dasharray="4 3""#
+        } else {
+            ""
+        };
         let status_label = match n.status {
             Status::Open => "open",
             Status::Closed => "closed",
@@ -197,7 +205,9 @@ fn render_svg(g: &IssueGraph, colors: &[(String, String)]) -> String {
         ));
         s.push_str(&format!(
             r#"<text x="{tx:.0}" y="{ty2:.0}" font-size="11" fill="{ink}">{title}</text>"#,
-            tx = p.x + 10.0, ty2 = p.y + 34.0, ink = tokens::TEXT_PRIMARY,
+            tx = p.x + 10.0,
+            ty2 = p.y + 34.0,
+            ink = tokens::TEXT_PRIMARY,
             title = escape(&truncate(&n.title, 24)),
         ));
         s.push_str(&format!(
@@ -220,5 +230,7 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
