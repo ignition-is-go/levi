@@ -115,6 +115,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
                     id: sha.clone().into(),
                     project_id: project_id.clone(),
                     parents: parents.iter().map(|p| p.to_string()).collect(),
+                    patch_id: None,
                 };
                 commit_facts.push((ctx.set_event(&fact), sha));
             }
