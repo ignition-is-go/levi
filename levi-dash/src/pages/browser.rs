@@ -6,11 +6,20 @@ use levi_core::resolve::{Resolution, Status as TaskStatus};
 use levi_core::*;
 use myko_leptos::live_query;
 use pulse_leptos_ui::{
-    Badge, BadgeVariant, EmptyState, Modal, Pane, SearchField, Select, Status, StatusVariant,
-    tokens,
+    Badge, BadgeVariant, EmptyState, Modal, SearchField, Select, Status, StatusVariant, tokens,
 };
 
 use crate::resolve_client;
+
+/// Priority → badge variant (P0 error, P1 warning, else neutral). Shared by
+/// the list rows and the detail drawer so a priority always reads the same.
+fn priority_badge(p: Priority) -> BadgeVariant {
+    match p {
+        Priority::P0 => BadgeVariant::Error,
+        Priority::P1 => BadgeVariant::Warning,
+        _ => BadgeVariant::Neutral,
+    }
+}
 
 #[component]
 pub fn Browser() -> impl IntoView {
@@ -140,11 +149,7 @@ pub fn Browser() -> impl IntoView {
                     TaskStatus::Open => (StatusVariant::Success, "open"),
                     TaskStatus::Closed => (StatusVariant::Neutral, "closed"),
                 };
-                let priority_variant = match priority {
-                    Priority::P0 => BadgeVariant::Error,
-                    Priority::P1 => BadgeVariant::Warning,
-                    _ => BadgeVariant::Neutral,
-                };
+                let priority_variant = priority_badge(priority);
                 let title_attr = title.clone();
                 view! {
                     <div
@@ -230,73 +235,121 @@ pub fn Browser() -> impl IntoView {
             .collect();
         history.sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
 
+        // Own the fields up front so the reactive child closures below don't
+        // each try to move `task`.
+        let priority = task.priority;
+        let title = task.title.clone();
+        let body = task.body.clone();
+        let created_date = task.created.get(..10).unwrap_or("").to_string();
+        let created_by = task.created_by_dev.clone();
+        let meta_style = format!("font-size:{};", tokens::FONT_SIZE_XS);
         view! {
-            <Modal open=drawer_open title=task.title.clone()>
-                <div class="text-muted" style="margin-bottom:8px;">
-                    {format!(
-                        "{} · created {} by {}",
-                        task.priority.label(),
-                        task.created.get(..10).unwrap_or(""),
-                        task.created_by_dev
-                    )}
+            <Modal open=drawer_open title=title>
+                <div style=format!(
+                    "display:flex;flex-direction:column;gap:{};",
+                    tokens::SPACING_MD,
+                )>
+                    <div class="levi-row" style=format!("gap:{};", tokens::SPACING_SM)>
+                        <Badge variant=priority_badge(priority)>{priority.label()}</Badge>
+                        <span class="text-muted" style=meta_style.clone()>
+                            {format!("created {created_date} by {created_by}")}
+                        </span>
+                    </div>
+
+                    {(!body.is_empty()).then(|| view! {
+                        <div style=format!(
+                            "white-space:pre-wrap;color:{};font-size:{};",
+                            tokens::TEXT_SECONDARY, tokens::FONT_SIZE_SM,
+                        )>{body}</div>
+                    })}
+
+                    {(!blocked_by.is_empty() || !blocks.is_empty()).then(|| view! {
+                        <div style=format!("display:flex;flex-direction:column;gap:{};", tokens::SPACING_2XS)>
+                            {(!blocked_by.is_empty()).then(|| view! {
+                                <div style=meta_style.clone()>
+                                    <span class="label">"blocked by "</span>{blocked_by.join(", ")}
+                                </div>
+                            })}
+                            {(!blocks.is_empty()).then(|| view! {
+                                <div style=meta_style.clone()>
+                                    <span class="label">"blocks "</span>{blocks.join(", ")}
+                                </div>
+                            })}
+                        </div>
+                    })}
+
+                    <div style=format!("display:flex;flex-direction:column;gap:{};", tokens::SPACING_2XS)>
+                        <div class="label">"status history"</div>
+                        {history
+                            .into_iter()
+                            .map(|change| {
+                                let anchor = change
+                                    .anchor_commit
+                                    .as_ref()
+                                    .map(|a| format!(" @ {}", &a[..8.min(a.len())]))
+                                    .unwrap_or_else(|| " (everywhere)".into());
+                                let (label, variant) = match change.to_status {
+                                    StatusKind::Closed => ("closed", StatusVariant::Neutral),
+                                    StatusKind::Reopened => ("reopened", StatusVariant::Success),
+                                };
+                                view! {
+                                    <div class="levi-row" style=format!("gap:{};", tokens::SPACING_SM)>
+                                        <Status variant=variant>{label}</Status>
+                                        <span class="text-muted" style=format!(
+                                            "font-family:{};font-size:{};",
+                                            tokens::FONT_MONO, tokens::FONT_SIZE_2XS,
+                                        )>
+                                            {format!(
+                                                "{}{anchor} by {}",
+                                                change.created.get(..19).unwrap_or(""),
+                                                change.by_dev,
+                                            )}
+                                        </span>
+                                    </div>
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+
+                    {(!task_comments.is_empty()).then(|| view! {
+                        <div style=format!("display:flex;flex-direction:column;gap:{};", tokens::SPACING_SM)>
+                            <div class="label">"comments"</div>
+                            {task_comments
+                                .into_iter()
+                                .map(|comment| {
+                                    view! {
+                                        <div style=format!("display:flex;flex-direction:column;gap:{};", tokens::SPACING_2XS)>
+                                            <span class="text-muted" style=format!(
+                                                "font-family:{};font-size:{};",
+                                                tokens::FONT_MONO, tokens::FONT_SIZE_2XS,
+                                            )>
+                                                {format!("{} · {}", comment.created.get(..19).unwrap_or(""), comment.by_dev)}
+                                            </span>
+                                            <span style=format!(
+                                                "white-space:pre-wrap;font-size:{};",
+                                                tokens::FONT_SIZE_SM,
+                                            )>{comment.body.clone()}</span>
+                                        </div>
+                                    }
+                                })
+                                .collect_view()}
+                        </div>
+                    })}
                 </div>
-                {(!task.body.is_empty()).then(|| view! { <div style="margin-bottom:10px;">{task.body.clone()}</div> })}
-                {(!blocked_by.is_empty()).then(|| view! {
-                    <div><span class="label">"blocked by "</span>{blocked_by.join(", ")}</div>
-                })}
-                {(!blocks.is_empty()).then(|| view! {
-                    <div><span class="label">"blocks "</span>{blocks.join(", ")}</div>
-                })}
-                <div class="label" style="margin-top:10px;">"status history"</div>
-                {history
-                    .into_iter()
-                    .map(|change| {
-                        let anchor = change
-                            .anchor_commit
-                            .as_ref()
-                            .map(|a| format!(" @ {}", &a[..8.min(a.len())]))
-                            .unwrap_or_else(|| " (everywhere)".into());
-                        view! {
-                            <div style="display:flex;gap:8px;padding:2px 0;">
-                                <span>{match change.to_status {
-                                    StatusKind::Closed => "closed",
-                                    StatusKind::Reopened => "reopened",
-                                }}</span>
-                                <span class="text-muted" style="font-size:11px;">
-                                    {format!(
-                                        "{}{anchor} by {}",
-                                        change.created.get(..19).unwrap_or(""),
-                                        change.by_dev
-                                    )}
-                                </span>
-                            </div>
-                        }
-                    })
-                    .collect_view()}
-                {(!task_comments.is_empty()).then(|| view! {
-                    <div class="label" style="margin-top:10px;">"comments"</div>
-                })}
-                {task_comments
-                    .into_iter()
-                    .map(|comment| {
-                        view! {
-                            <div style="padding:2px 0;">
-                                <span class="text-muted" style="font-size:11px;">
-                                    {format!("{} {} ", comment.created.get(..19).unwrap_or(""), comment.by_dev)}
-                                </span>
-                                <span>{comment.body.clone()}</span>
-                            </div>
-                        }
-                    })
-                    .collect_view()}
             </Modal>
         }
         .into_any()
     };
 
     view! {
-        <div style="padding:12px;height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <div style=format!(
+            "padding:{};height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:{};",
+            tokens::SPACING_MD, tokens::SPACING_SM,
+        )>
+            <div style=format!(
+                "flex:0 0 auto;display:flex;gap:{};flex-wrap:wrap;align-items:center;",
+                tokens::SPACING_SM,
+            )>
                 <Select
                     value=Signal::derive(move || sel_project.get())
                     on_change=Callback::new(move |v| sel_project.set(v))
@@ -323,7 +376,9 @@ pub fn Browser() -> impl IntoView {
                 />
                 <SearchField value=filter_text placeholder="filter by title or label" />
             </div>
-            <Pane>{rows}</Pane>
+            // No pane: the workspace already frames this. The list is a plain
+            // scroll region; each row carries its own separator.
+            <div style="flex:1;min-height:0;overflow-y:auto;">{rows}</div>
             {drawer}
         </div>
     }
