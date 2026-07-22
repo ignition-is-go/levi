@@ -114,7 +114,7 @@ fn worktree_block(
         )>
             <div class="text-muted trunc" title=worktree style=format!(
                 "font-family:{};font-size:{};margin-bottom:{};",
-                tokens::FONT_MONO, tokens::FONT_SIZE_2XS, tokens::SPACING_2XS,
+                tokens::FONT_MONO, tokens::FONT_SIZE_XS, tokens::SPACING_2XS,
             )>{wt}</div>
             {claims
                 .into_iter()
@@ -153,10 +153,12 @@ fn claim_row(claim: std::sync::Arc<Claim>, title: Option<String>) -> impl IntoVi
                 "font-family:{};font-size:{};white-space:nowrap;",
                 tokens::FONT_MONO, tokens::FONT_SIZE_XS,
             )>{short}</span>
-            <span class="trunc" title=tip style="flex:1;">{title}</span>
+            <span class="trunc" title=tip style=format!(
+                "flex:1;font-size:{};", tokens::FONT_SIZE_SM,
+            )>{title}</span>
             <span class="text-muted" style=format!(
                 "font-family:{};font-size:{};white-space:nowrap;",
-                tokens::FONT_MONO, tokens::FONT_SIZE_2XS,
+                tokens::FONT_MONO, tokens::FONT_SIZE_XS,
             )>{time}</span>
             {(!live).then(|| view! {
                 <Badge variant=BadgeVariant::Neutral>"expired"</Badge>

@@ -104,7 +104,7 @@ pub fn Overview() -> impl IntoView {
                                             style=format!(
                                                 "color:{};font-size:{};padding-left:{};",
                                                 tokens::TEXT_SECONDARY,
-                                                tokens::FONT_SIZE_XS,
+                                                tokens::FONT_SIZE_SM,
                                                 tokens::SPACING_MD,
                                             )
                                         >{t}</div>
@@ -164,7 +164,7 @@ pub fn Overview() -> impl IntoView {
                         <span class="text-muted" style=format!(
                             "font-family:{};font-size:{};white-space:nowrap;",
                             tokens::FONT_MONO,
-                            tokens::FONT_SIZE_2XS,
+                            tokens::FONT_SIZE_XS,
                         )>{time}</span>
                         <span style="justify-self:start;">
                             <Badge variant=BadgeVariant::Neutral>{kind}</Badge>

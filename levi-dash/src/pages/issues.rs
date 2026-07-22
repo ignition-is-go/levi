@@ -360,14 +360,14 @@ fn node_card(n: GraphNode, x: f64, y: f64, color: String) -> impl IntoView {
                 <Badge variant=variant>{n.priority.label().to_string()}</Badge>
                 <span style=format!(
                     "color:{color};font-size:{};font-family:{};",
-                    tokens::FONT_SIZE_2XS,
+                    tokens::FONT_SIZE_XS,
                     tokens::FONT_MONO,
                 )>{short}</span>
             </div>
             <span style=format!(
                 "color:{};font-size:{};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;",
                 tokens::TEXT_PRIMARY,
-                tokens::FONT_SIZE_XS,
+                tokens::FONT_SIZE_SM,
             )>{n.title.clone()}</span>
         </div>
     }
