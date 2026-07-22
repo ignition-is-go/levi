@@ -213,12 +213,19 @@ fn recent_patch_ids(repo_dir: &std::path::Path, limit: usize) -> Vec<(String, St
 }
 
 /// (patch-id, sha) pairs for the last `limit` commits reachable from `head`.
-fn recent_patch_ids_of(
+pub fn recent_patch_ids_of(
     repo_dir: &std::path::Path,
     head: &str,
     limit: usize,
 ) -> Vec<(String, String)> {
     patch_ids_of(repo_dir, &["-n", &limit.to_string(), head])
+}
+
+/// Thin `pub` wrapper around the private `patch_id` helper, for callers
+/// outside this module (the facts publisher). Keeps `patch_id` itself
+/// private so its contract isn't widened beyond what's needed.
+pub fn patch_id_pub(repo_dir: &std::path::Path, sha: &str) -> Option<String> {
+    patch_id(repo_dir, sha)
 }
 
 /// Shared `git log -p <extra_args> | git patch-id --stable` helper. Never

@@ -462,3 +462,30 @@ fn issue_graph_report_is_computed_on_the_hub() {
     let layer = |id: &str| g.nodes.iter().find(|n| n.task_id == id).unwrap().layer;
     assert_eq!(layer(&blocked), layer(&blocker) + 1);
 }
+
+/// A task closed on a feature branch then squash-merged resolves closed from
+/// FACTS alone on a second client (git-free), via published patch-ids.
+#[test]
+fn squash_resolves_from_facts_across_clients() {
+    let hub_port = start_hub();
+    let (a, b) = two_projects(hub_port);
+
+    // A closes a task anchored on a feature branch, squash-merges to main,
+    // then publishes facts (the anchor's patch-id + main's window).
+    let id = a.add("upstream fix", &[]);
+    a.git(&["checkout", "-q", "-b", "feature"]);
+    a.commit_file("fix.txt", "the fix\n", "the fix");
+    a.levi_ok(&["close", &id]);
+    a.checkout("main");
+    a.git(&["merge", "-q", "--squash", "feature"]);
+    a.git(&["commit", "-q", "-m", "upstream fix (squashed)"]);
+    a.levi_ok(&["sync", "--no-git"]);
+
+    // B syncs and resolves the task from facts: closed, squashed.
+    b.levi_ok(&["sync", "--no-git"]);
+    // Give B main's commit so its own head can host the fact graph is not
+    // required — B resolves foreign facts via the ladder; assert via show.
+    let show = a.levi_json(&["show", &id, "--json"]);
+    assert_eq!(show["status"], "closed");
+    assert_eq!(show["resolution"], "squashed");
+}

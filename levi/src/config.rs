@@ -28,6 +28,8 @@ pub struct LeviConfig {
     pub remote: String,
     /// Claim ttl (default 24h).
     pub claim_ttl_secs: u64,
+    /// Commits per head to compute patch-ids for when publishing facts.
+    pub patch_id_window: usize,
 }
 
 impl LeviConfig {
@@ -49,6 +51,10 @@ impl LeviConfig {
                 .claim_ttl_secs
                 .or(global_cfg.claim_ttl_secs)
                 .unwrap_or(24 * 60 * 60),
+            patch_id_window: repo_cfg
+                .patch_id_window
+                .or(global_cfg.patch_id_window)
+                .unwrap_or(300),
         }
     }
 }
@@ -88,6 +94,7 @@ struct FileConfig {
     hub: Option<String>,
     remote: Option<String>,
     claim_ttl_secs: Option<u64>,
+    patch_id_window: Option<usize>,
 }
 
 impl FileConfig {
@@ -108,6 +115,11 @@ impl FileConfig {
                 .and_then(|c| c.get("ttl_secs"))
                 .and_then(|v| v.as_integer())
                 .and_then(|v| u64::try_from(v).ok()),
+            patch_id_window: doc
+                .get("facts")
+                .and_then(|c| c.get("patch_id_window"))
+                .and_then(|v| v.as_integer())
+                .and_then(|v| usize::try_from(v).ok()),
         }
     }
 }
