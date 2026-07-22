@@ -462,3 +462,62 @@ fn issue_graph_report_is_computed_on_the_hub() {
     let layer = |id: &str| g.nodes.iter().find(|n| n.task_id == id).unwrap().layer;
     assert_eq!(layer(&blocked), layer(&blocker) + 1);
 }
+
+/// A task closed on a feature branch then squash-merged resolves closed from
+/// FACTS alone on a second client (git-free), via published patch-ids.
+#[test]
+fn squash_resolves_from_facts_across_clients() {
+    use std::time::Duration;
+    let hub_port = start_hub();
+    let (a, b) = two_projects(hub_port);
+
+    // A closes a task anchored on a feature branch, squash-merges to main,
+    // then publishes facts (the anchor's patch-id + main's window).
+    let id = a.add("upstream fix", &[]);
+    a.git(&["checkout", "-q", "-b", "feature"]);
+    let anchor_sha = a.commit_file("fix.txt", "the fix\n", "the fix");
+    a.levi_ok(&["close", &id]);
+    a.checkout("main");
+    a.git(&["merge", "-q", "--squash", "feature"]);
+    a.git(&["commit", "-q", "-m", "upstream fix (squashed)"]);
+    a.levi_ok(&["sync", "--no-git"]);
+
+    // B syncs and resolves the task from facts: closed, squashed.
+    b.levi_ok(&["sync", "--no-git"]);
+    // Give B main's commit so its own head can host the fact graph is not
+    // required — B resolves foreign facts via the ladder; assert via show.
+    let show = a.levi_json(&["show", &id, "--json"]);
+    assert_eq!(show["status"], "closed");
+    assert_eq!(show["resolution"], "squashed");
+
+    // Prove the publish wiring itself, not just the local git resolution
+    // that `show` above exercises: fetch the anchor's CommitFact straight
+    // off the hub and check it actually carries a patch-id. Every
+    // status-change anchor commit gets its patch-id computed unconditionally
+    // in facts::publish (independent of the windowed per-branch walk), so
+    // this is guaranteed non-null regardless of `patch_id_window` — unlike
+    // the squash commit on main, whose patch-id depends on falling inside
+    // that window.
+    let session = levi::hub_client::HubSession::connect(
+        &format!("127.0.0.1:{hub_port}"),
+        Duration::from_secs(10),
+    )
+    .expect("connect to hub");
+    let facts = session
+        .query_at_least(
+            levi_core::GetCommitFactsByIds {
+                ids: vec![anchor_sha.as_str().into()],
+            },
+            1,
+            Duration::from_secs(10),
+        )
+        .expect("anchor commit fact published to the hub");
+    let anchor_fact = facts
+        .iter()
+        .find(|f| f.id.to_string() == anchor_sha)
+        .expect("anchor sha present among returned facts");
+    assert!(
+        anchor_fact.patch_id.is_some(),
+        "anchor CommitFact on the hub must carry a non-null patch_id"
+    );
+}

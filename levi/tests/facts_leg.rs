@@ -103,7 +103,7 @@ fn facts_publish_chunks_large_history() {
     );
 
     // Every commit sha is verified-and-recorded in the dedup cache.
-    let cache_path = repo.path().join(".git/levi/facts-published");
+    let cache_path = repo.path().join(".git/levi/facts-published-v2");
     let cache = std::fs::read_to_string(&cache_path).expect("cache written");
     assert_eq!(cache.lines().count(), 601, "601 commits published");
 

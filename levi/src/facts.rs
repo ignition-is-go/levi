@@ -35,7 +35,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
     let project_id = project.id.to_string();
     let repo = ctx.store.repo();
 
-    let cache_path = repo.common_dir().join("levi").join("facts-published");
+    let cache_path = repo.common_dir().join("levi").join("facts-published-v2");
     let published: HashSet<String> = std::fs::read_to_string(&cache_path)
         .map(|s| s.lines().map(str::to_string).collect())
         .unwrap_or_default();
@@ -91,6 +91,41 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         }
     }
 
+    // Patch-ids for squash/rebase matching (spec 2026-07-22): every anchor
+    // commit + the most-recent `patch_id_window` commits per branch head.
+    // Bounded so we never compute a patch-id per commit over full history.
+    let repo_dir = repo
+        .workdir()
+        .unwrap_or_else(|| repo.git_dir())
+        .to_path_buf();
+    let window = ctx.config.patch_id_window;
+    let mut patch_of: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    // Windowed commits per head.
+    if let Ok(refs) = repo.references()
+        && let Ok(iter) = refs.prefixed("refs/heads/")
+    {
+        for reference in iter.flatten() {
+            let mut reference = reference;
+            if let Ok(id) = reference.peel_to_id() {
+                for (patch, sha) in
+                    crate::ancestors::recent_patch_ids_of(&repo_dir, &id.detach().to_string(), window)
+                {
+                    patch_of.entry(sha).or_insert(patch);
+                }
+            }
+        }
+    }
+    // Every status-change anchor commit (may live off the published heads).
+    for change in &world.status_changes {
+        if let Some(sha) = &change.anchor_commit
+            && !patch_of.contains_key(sha)
+            && let Some(patch) = crate::ancestors::patch_id_pub(&repo_dir, sha)
+        {
+            patch_of.insert(sha.clone(), patch);
+        }
+    }
+
     // Walk ancestors, depth-capped, skipping already-published shas.
     let mut commit_facts: Vec<(MEvent, String)> = Vec::new();
     let mut seen: HashSet<ObjectId> = HashSet::new();
@@ -115,6 +150,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
                     id: sha.clone().into(),
                     project_id: project_id.clone(),
                     parents: parents.iter().map(|p| p.to_string()).collect(),
+                    patch_id: patch_of.get(&sha).cloned(),
                 };
                 commit_facts.push((ctx.set_event(&fact), sha));
             }

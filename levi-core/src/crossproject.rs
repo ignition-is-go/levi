@@ -261,6 +261,7 @@ mod tests {
             id: id.into(),
             project_id: project.into(),
             parents: parents.iter().map(|p| p.to_string()).collect(),
+            patch_id: None,
         }
     }
 

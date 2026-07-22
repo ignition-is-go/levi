@@ -115,11 +115,12 @@ impl LeviCtx {
 
     /// Ancestors for HEAD, or for `--branch X` when given.
     pub fn ancestors_for(&self, branch: Option<&str>) -> Result<GixAncestors<'_>> {
+        let window = self.config.patch_id_window;
         match branch {
-            None => Ok(GixAncestors::new(self.store.repo())),
+            None => Ok(GixAncestors::new(self.store.repo()).with_window(window)),
             Some(name) => {
                 let head = self.rev(name)?;
-                Ok(GixAncestors::at(self.store.repo(), Some(head)))
+                Ok(GixAncestors::at(self.store.repo(), Some(head)).with_window(window))
             }
         }
     }

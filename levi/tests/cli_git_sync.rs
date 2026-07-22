@@ -402,3 +402,108 @@ fn init_bails_when_remote_unreachable_unless_no_sync() {
         .success()
         .stdout(predicate::str::contains("initialized levi project"));
 }
+
+/// A squash-merged anchor now resolves the task CLOSED (squashed), not just a
+/// warning (spec 2026-07-22).
+#[test]
+fn squash_merged_task_resolves_closed() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fix the thing", &[]);
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_file("fix.txt", "the fix\n", "the fix");
+    repo.levi_ok(&["close", &id]);
+
+    // Squash-merge onto main (the anchor's sha never reaches main).
+    repo.checkout("main");
+    repo.git(&["merge", "-q", "--squash", "feature"]);
+    repo.git(&["commit", "-q", "-m", "fix the thing (#9)"]);
+
+    // The task resolves closed, labeled squashed.
+    let ls = repo.levi_json(&["ls", "--all", "--json"]);
+    let task = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == id.as_str())
+        .unwrap();
+    assert_eq!(
+        task["status"], "closed",
+        "squash-merged task must read closed"
+    );
+    assert_eq!(task["resolution"], "squashed");
+}
+
+/// The text (non-JSON) `ls` output must surface "squashed" too, not just
+/// the JSON `resolution` field (spec 2026-07-22 final review).
+#[test]
+fn squash_merged_task_shows_squashed_in_text_output() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fix the thing (text output)", &[]);
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_file("fix.txt", "the fix\n", "the fix");
+    repo.levi_ok(&["close", &id]);
+
+    repo.checkout("main");
+    repo.git(&["merge", "-q", "--squash", "feature"]);
+    repo.git(&["commit", "-q", "-m", "fix the thing (#10)"]);
+
+    let out = repo.levi(&["ls", "--all"]).output().unwrap();
+    assert!(out.status.success());
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        combined.contains("squashed"),
+        "text output must mention squashed: {combined}"
+    );
+}
+
+/// The CLI resolver must honor `[facts] patch_id_window` from
+/// `.levi/config.toml`, the same knob the fact publisher already respects
+/// (spec 2026-07-22 final review): a squash commit pushed outside a
+/// deliberately narrow window no longer patch-id-matches, so the task reads
+/// open — proving the config value actually reaches the resolver rather than
+/// the CLI silently using its own hardcoded default.
+#[test]
+fn cli_resolver_honors_configured_patch_id_window() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("narrow window", &[]);
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_file("fix.txt", "the fix\n", "the fix");
+    repo.levi_ok(&["close", &id]);
+
+    repo.checkout("main");
+    repo.git(&["merge", "-q", "--squash", "feature"]);
+    repo.git(&["commit", "-q", "-m", "squash the thing"]);
+    // Push the squash commit out of a narrow recent-history window.
+    repo.commit("unrelated 1");
+    repo.commit("unrelated 2");
+    repo.commit("unrelated 3");
+
+    // With the default (wide) window, the squash still resolves closed.
+    let ls_default = repo.levi_json(&["ls", "--all", "--json"]);
+    assert_eq!(
+        status_of(&ls_default, &id),
+        Some("closed".to_string()),
+        "sanity: default window should still find the squash"
+    );
+
+    // Narrow the window via repo config so the squash commit falls outside
+    // recent history; if the CLI resolver ignored the config knob, this
+    // would still read closed.
+    let dir = repo.path().join(".levi");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "[facts]\npatch_id_window = 1\n").unwrap();
+
+    let ls_narrow = repo.levi_json(&["ls", "--all", "--json"]);
+    assert_eq!(
+        status_of(&ls_narrow, &id),
+        Some("open".to_string()),
+        "a narrow configured patch_id_window must not find the squash match"
+    );
+}

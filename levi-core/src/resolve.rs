@@ -16,6 +16,8 @@ pub enum Ancestry {
     Yes,
     No,
     Unknown,
+    /// The exact anchor isn't present, but a patch-id-equivalent commit is.
+    Rewritten,
 }
 
 /// Answers "is `sha` an ancestor of (or equal to) this checkout's head?".
@@ -54,6 +56,9 @@ pub enum Resolution {
     /// At least one relevant anchor could not be resolved; unknown changes
     /// were treated as open and the task should be flagged.
     Partial,
+    /// Resolved via a patch-id match (squash/rebase/cherry-pick), not the
+    /// exact anchor — an inferred close, honestly flagged.
+    Squashed,
 }
 
 impl Resolution {
@@ -62,7 +67,20 @@ impl Resolution {
             Resolution::Exact => "exact",
             Resolution::Facts => "facts",
             Resolution::Partial => "partial",
+            Resolution::Squashed => "squashed",
         }
+    }
+
+    /// Keep the weaker of two grades. Order: Partial < Squashed < Facts/Exact.
+    pub fn weaken(self, other: Resolution) -> Resolution {
+        fn rank(r: Resolution) -> u8 {
+            match r {
+                Resolution::Partial => 0,
+                Resolution::Squashed => 1,
+                Resolution::Facts | Resolution::Exact => 2,
+            }
+        }
+        if rank(other) < rank(self) { other } else { self }
     }
 }
 
@@ -87,9 +105,13 @@ pub fn effective_status(
             None => true,
             Some(sha) => match anc.contains(sha) {
                 Ancestry::Yes => true,
+                Ancestry::Rewritten => {
+                    resolution = resolution.weaken(Resolution::Squashed);
+                    true
+                }
                 Ancestry::No => false,
                 Ancestry::Unknown => {
-                    resolution = Resolution::Partial;
+                    resolution = resolution.weaken(Resolution::Partial);
                     false
                 }
             },
@@ -112,6 +134,10 @@ pub fn effective_status(
 pub struct FactsAncestors {
     reachable: HashSet<String>,
     complete: bool,
+    /// patch-ids of commits reachable from head (for squash matching).
+    reachable_patches: HashSet<String>,
+    /// sha -> patch-id for every known fact (to look up an anchor's patch-id).
+    patch_of: HashMap<String, String>,
 }
 
 impl FactsAncestors {
@@ -133,9 +159,19 @@ impl FactsAncestors {
             reachable.remove(head);
             complete = false;
         }
+        let patch_of: HashMap<String, String> = facts
+            .iter()
+            .filter_map(|(sha, f)| f.patch_id.clone().map(|p| (sha.clone(), p)))
+            .collect();
+        let reachable_patches: HashSet<String> = reachable
+            .iter()
+            .filter_map(|sha| patch_of.get(sha).cloned())
+            .collect();
         Self {
             reachable,
             complete,
+            reachable_patches,
+            patch_of,
         }
     }
 }
@@ -143,12 +179,16 @@ impl FactsAncestors {
 impl AncestorSet for FactsAncestors {
     fn contains(&mut self, sha: &str) -> Ancestry {
         if self.reachable.contains(sha) {
-            Ancestry::Yes
-        } else if self.complete {
-            Ancestry::No
-        } else {
-            Ancestry::Unknown
+            return Ancestry::Yes;
         }
+        // Squash/rebase: the exact sha is gone, but its diff (patch-id) may be
+        // present in head's ancestry under a new sha.
+        if let Some(patch) = self.patch_of.get(sha)
+            && self.reachable_patches.contains(patch)
+        {
+            return Ancestry::Rewritten;
+        }
+        if self.complete { Ancestry::No } else { Ancestry::Unknown }
     }
 }
 
@@ -388,6 +428,7 @@ mod tests {
                         id: (*sha).into(),
                         project_id: "p".into(),
                         parents: parents.iter().map(|p| p.to_string()).collect(),
+                        patch_id: None,
                     },
                 )
             })
@@ -435,5 +476,92 @@ mod tests {
         let mut anc = FactsAncestors::new(&f, "nope");
         assert_eq!(anc.contains("c1"), Ancestry::Unknown);
         assert_eq!(anc.contains("nope"), Ancestry::Unknown);
+    }
+
+    mod reconcile_tests {
+        use super::*;
+
+        fn closed_change(anchor: &str) -> StatusChange {
+            StatusChange {
+                id: "c1".into(),
+                project_id: "p".into(),
+                task_id: "t".into(),
+                to_status: StatusKind::Closed,
+                anchor_commit: Some(anchor.into()),
+                created: "2026-01-01T00:00:00Z".into(),
+                by_dev: "d".into(),
+                by_machine: "m".into(),
+            }
+        }
+
+        fn fact(sha: &str, parents: &[&str], patch: Option<&str>) -> CommitFact {
+            CommitFact {
+                id: sha.into(),
+                project_id: "p".into(),
+                parents: parents.iter().map(|s| s.to_string()).collect(),
+                patch_id: patch.map(str::to_string),
+            }
+        }
+
+        /// Anchor absent from ancestry but its patch-id matches a head-ancestry
+        /// commit -> Rewritten.
+        #[test]
+        fn facts_patch_id_fallback_resolves_rewritten() {
+            // head: c2 <- c1. squashed-away anchor `X` shares patch-id "pX" with c1.
+            let facts: BTreeMap<String, CommitFact> = [
+                ("c1".to_string(), fact("c1", &[], Some("pX"))),
+                ("c2".to_string(), fact("c2", &["c1"], Some("pOther"))),
+                ("X".to_string(), fact("X", &[], Some("pX"))),
+            ].into_iter().collect();
+            let mut anc = FactsAncestors::new(&facts, "c2");
+            assert_eq!(anc.contains("c1"), Ancestry::Yes);      // exact, reachable
+            assert_eq!(anc.contains("X"), Ancestry::Rewritten); // squashed, patch match
+        }
+
+        /// No patch-id match -> No (when the graph is complete).
+        #[test]
+        fn facts_no_patch_match_is_no() {
+            let facts: BTreeMap<String, CommitFact> = [
+                ("c1".to_string(), fact("c1", &[], Some("pA"))),
+                ("X".to_string(), fact("X", &[], Some("pB"))),
+            ].into_iter().collect();
+            let mut anc = FactsAncestors::new(&facts, "c1");
+            assert_eq!(anc.contains("X"), Ancestry::No);
+        }
+
+        /// An anchor with no patch-id never matches.
+        #[test]
+        fn facts_none_patch_never_matches() {
+            let facts: BTreeMap<String, CommitFact> = [
+                ("c1".to_string(), fact("c1", &[], Some("pA"))),
+                ("X".to_string(), fact("X", &[], None)),
+            ].into_iter().collect();
+            let mut anc = FactsAncestors::new(&facts, "c1");
+            assert_eq!(anc.contains("X"), Ancestry::No);
+        }
+
+        /// A `Rewritten` anchor closes the task but downgrades to Squashed.
+        #[test]
+        fn rewritten_resolves_closed_squashed() {
+            struct Rw;
+            impl AncestorSet for Rw {
+                fn contains(&mut self, _sha: &str) -> Ancestry { Ancestry::Rewritten }
+            }
+            let ch = closed_change("deadbeef");
+            let got = effective_status(&[&ch], &mut Rw, Resolution::Exact);
+            assert_eq!(got.status, Status::Closed);
+            assert_eq!(got.resolution, Resolution::Squashed);
+            assert_eq!(got.resolution.label(), "squashed");
+        }
+
+        /// Grade fold keeps the weakest: Partial beats Squashed beats Exact.
+        #[test]
+        fn resolution_weaken_orders_partial_below_squashed_below_exact() {
+            assert_eq!(Resolution::Exact.weaken(Resolution::Squashed), Resolution::Squashed);
+            assert_eq!(Resolution::Squashed.weaken(Resolution::Partial), Resolution::Partial);
+            assert_eq!(Resolution::Facts.weaken(Resolution::Squashed), Resolution::Squashed);
+            // A stronger grade never upgrades a weaker one.
+            assert_eq!(Resolution::Squashed.weaken(Resolution::Exact), Resolution::Squashed);
+        }
     }
 }

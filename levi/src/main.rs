@@ -67,6 +67,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             anchor,
             no_anchor,
             force,
+            no_drop,
         } => commands::status::run(
             &ctx,
             &id,
@@ -75,6 +76,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 anchor,
                 no_anchor,
                 force,
+                no_drop,
             },
         ),
         Cmd::Reopen {
@@ -82,6 +84,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             anchor,
             no_anchor,
             force,
+            no_drop,
         } => commands::status::run(
             &ctx,
             &id,
@@ -90,6 +93,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 anchor,
                 no_anchor,
                 force,
+                no_drop,
             },
         ),
         Cmd::Next { claim, count, json } => commands::next::run(&mut ctx, claim, count, json),
