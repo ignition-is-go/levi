@@ -16,6 +16,8 @@ pub enum Ancestry {
     Yes,
     No,
     Unknown,
+    /// The exact anchor isn't present, but a patch-id-equivalent commit is.
+    Rewritten,
 }
 
 /// Answers "is `sha` an ancestor of (or equal to) this checkout's head?".
@@ -54,6 +56,9 @@ pub enum Resolution {
     /// At least one relevant anchor could not be resolved; unknown changes
     /// were treated as open and the task should be flagged.
     Partial,
+    /// Resolved via a patch-id match (squash/rebase/cherry-pick), not the
+    /// exact anchor — an inferred close, honestly flagged.
+    Squashed,
 }
 
 impl Resolution {
@@ -62,7 +67,20 @@ impl Resolution {
             Resolution::Exact => "exact",
             Resolution::Facts => "facts",
             Resolution::Partial => "partial",
+            Resolution::Squashed => "squashed",
         }
+    }
+
+    /// Keep the weaker of two grades. Order: Partial < Squashed < Facts/Exact.
+    pub fn weaken(self, other: Resolution) -> Resolution {
+        fn rank(r: Resolution) -> u8 {
+            match r {
+                Resolution::Partial => 0,
+                Resolution::Squashed => 1,
+                Resolution::Facts | Resolution::Exact => 2,
+            }
+        }
+        if rank(other) < rank(self) { other } else { self }
     }
 }
 
@@ -87,9 +105,13 @@ pub fn effective_status(
             None => true,
             Some(sha) => match anc.contains(sha) {
                 Ancestry::Yes => true,
+                Ancestry::Rewritten => {
+                    resolution = resolution.weaken(Resolution::Squashed);
+                    true
+                }
                 Ancestry::No => false,
                 Ancestry::Unknown => {
-                    resolution = Resolution::Partial;
+                    resolution = resolution.weaken(Resolution::Partial);
                     false
                 }
             },
@@ -435,5 +457,46 @@ mod tests {
         let mut anc = FactsAncestors::new(&f, "nope");
         assert_eq!(anc.contains("c1"), Ancestry::Unknown);
         assert_eq!(anc.contains("nope"), Ancestry::Unknown);
+    }
+
+    mod reconcile_tests {
+        use super::*;
+
+        fn closed_change(anchor: &str) -> StatusChange {
+            StatusChange {
+                id: "c1".into(),
+                project_id: "p".into(),
+                task_id: "t".into(),
+                to_status: StatusKind::Closed,
+                anchor_commit: Some(anchor.into()),
+                created: "2026-01-01T00:00:00Z".into(),
+                by_dev: "d".into(),
+                by_machine: "m".into(),
+            }
+        }
+
+        /// A `Rewritten` anchor closes the task but downgrades to Squashed.
+        #[test]
+        fn rewritten_resolves_closed_squashed() {
+            struct Rw;
+            impl AncestorSet for Rw {
+                fn contains(&mut self, _sha: &str) -> Ancestry { Ancestry::Rewritten }
+            }
+            let ch = closed_change("deadbeef");
+            let got = effective_status(&[&ch], &mut Rw, Resolution::Exact);
+            assert_eq!(got.status, Status::Closed);
+            assert_eq!(got.resolution, Resolution::Squashed);
+            assert_eq!(got.resolution.label(), "squashed");
+        }
+
+        /// Grade fold keeps the weakest: Partial beats Squashed beats Exact.
+        #[test]
+        fn resolution_weaken_orders_partial_below_squashed_below_exact() {
+            assert_eq!(Resolution::Exact.weaken(Resolution::Squashed), Resolution::Squashed);
+            assert_eq!(Resolution::Squashed.weaken(Resolution::Partial), Resolution::Partial);
+            assert_eq!(Resolution::Facts.weaken(Resolution::Squashed), Resolution::Squashed);
+            // A stronger grade never upgrades a weaker one.
+            assert_eq!(Resolution::Squashed.weaken(Resolution::Exact), Resolution::Squashed);
+        }
     }
 }

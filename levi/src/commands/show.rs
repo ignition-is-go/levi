@@ -24,6 +24,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 None => "yes",
                 Some(sha) => match anc.contains(sha) {
                     Ancestry::Yes => "yes",
+                    Ancestry::Rewritten => "yes",
                     Ancestry::No => "no",
                     Ancestry::Unknown => "unknown",
                 },
