@@ -105,12 +105,47 @@ fallback: on an exact miss, take the anchor's `patch_id` (from the anchor's own
 CommitFact — anchors are always published as fact roots) and scan the head's
 fact-ancestry for a commit whose `patch_id` matches → `Rewritten`.
 
-`CommitFact`'s id stays its sha (content-addressed, immutable). Adding
-`patch_id` with `#[serde(default)]` is backward compatible: old facts on the
-hub deserialize with `patch_id: None` and simply don't participate in
-patch-id matching until republished. The facts-published dedup cache is keyed
-on sha, so bumping it (or letting the 1h RefFact-style refresh re-touch heads)
-backfills patch-ids over time; a one-time cache reset republishes everything.
+### 1d. Sync reconciliation (the load-bearing detail)
+
+The new field has to actually *reach* the hub and *update* facts already there.
+Verified against the sync path:
+
+- **The sync sees the difference.** A `CommitFact` carrying a `patch_id`
+  serializes to different bytes, so its `LogEntry` id (the content address of
+  the encoded event) differs from the old `patch_id: None` version. The merkle
+  bucket walk compares `LogEntry` ids, so the patch-id-bearing fact registers
+  as a *new* event in a differing bucket and transfers — it is not
+  dedup-swallowed as "already have that sha."
+
+- **The hub reconciles by LWW.** `ApplyLogEntry`'s guard is keyed on the
+  entity item id (`CommitFact.id` = sha) and skips events older than what the
+  entity already shows. The republished fact carries a fresh `created_at`, so
+  it wins LWW over the stored `patch_id: None` version — the hub's materialized
+  `CommitFact` gains the `patch_id`. Same mechanism that already makes RefFact
+  updates converge.
+
+- **The client must regenerate it.** The one gap: `facts.rs` suppresses
+  re-publishing via the `facts-published` cache keyed on sha, so an
+  already-published commit is never re-emitted — and would never gain a
+  `patch_id`. **The cache is versioned** (`facts-published` →
+  `facts-published-v2`, empty on upgrade) so each client republishes its
+  window's facts once, now with patch-ids. Bounded by the patch-id window, so
+  the one-time cost is the window size, not full history.
+
+- **Determinism removes the conflict.** A commit's diff has exactly one
+  patch-id, so every client computes the *same* value — patch-id facts never
+  genuinely conflict. The only reconciliation wrinkle is a not-yet-upgraded
+  client republishing a fact *without* a patch-id and, by a newer timestamp,
+  clobbering a `Some` back to `None`. That is **honest degradation, not a wrong
+  answer**: the task falls back to reading `open` (its pre-fix behavior) until
+  a patch-id-aware client republishes it. Steady state (whole fleet upgraded +
+  sha-keyed dedup) has no churn. An optional monotonic guard — the hub never
+  overwrites a `Some(patch_id)` with `None` — removes even the transient
+  flicker; filed as a small follow-up, not required for correctness.
+
+Backward compatibility: `#[serde(default)]` means old facts on the hub read as
+`patch_id: None` and simply don't participate in matching until republished, so
+nothing breaks during rollout.
 
 ### Cost — the recent-window bound
 
