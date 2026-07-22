@@ -242,6 +242,9 @@ pub fn Browser() -> impl IntoView {
                         {(resolved.resolution == Resolution::Partial).then(|| view! {
                             <Badge variant=BadgeVariant::Warning>"unknown anchor"</Badge>
                         })}
+                        {(resolved.resolution == Resolution::Squashed).then(|| view! {
+                            <Badge variant=BadgeVariant::Neutral>"squashed"</Badge>
+                        })}
                     </div>
                 }
             })

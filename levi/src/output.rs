@@ -92,8 +92,10 @@ pub fn task_line(
     if let Some(c) = world.live_claim(&id, now) {
         line.push_str(&format!("  (claimed by {})", c.dev));
     }
-    if status.resolution == levi_core::resolve::Resolution::Partial {
-        line.push_str("  ⚠ unknown anchor");
+    match status.resolution {
+        levi_core::resolve::Resolution::Partial => line.push_str("  ⚠ unknown anchor"),
+        levi_core::resolve::Resolution::Squashed => line.push_str("  ~ squashed"),
+        _ => {}
     }
     if let Some(hint) = elsewhere_hint(elsewhere) {
         line.push_str(&format!("  ({hint} — consider merging)"));

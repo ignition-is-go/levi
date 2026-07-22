@@ -17,6 +17,11 @@ pub struct GixAncestors<'r> {
     cache: HashMap<String, Ancestry>,
     /// Lazily-built patch-id set of head's recent history (spec 2026-07-22).
     head_patches: Option<std::collections::HashSet<String>>,
+    /// Commits per head to consider for patch-id matching; defaults to
+    /// `PATCH_ID_WINDOW` but callers with a `LeviConfig` in scope should set
+    /// this from `config.patch_id_window` via `with_window` (spec 2026-07-22:
+    /// the CLI resolver honors the same knob as the fact publisher).
+    window: usize,
 }
 
 impl<'r> GixAncestors<'r> {
@@ -33,7 +38,15 @@ impl<'r> GixAncestors<'r> {
             head,
             cache: HashMap::new(),
             head_patches: None,
+            window: PATCH_ID_WINDOW,
         }
+    }
+
+    /// Override the patch-id window (default `PATCH_ID_WINDOW`), e.g. from
+    /// `LeviConfig::patch_id_window`.
+    pub fn with_window(mut self, window: usize) -> Self {
+        self.window = window;
+        self
     }
 
     fn lookup(&mut self, sha: &str) -> Ancestry {
@@ -74,7 +87,7 @@ impl<'r> GixAncestors<'r> {
             let head_hex = self.head.map(|h| h.to_string());
             let set = head_hex
                 .map(|h| {
-                    recent_patch_ids_of(&repo_dir, &h, PATCH_ID_WINDOW)
+                    recent_patch_ids_of(&repo_dir, &h, self.window)
                         .into_iter()
                         .map(|(patch, _sha)| patch)
                         .collect()
@@ -170,7 +183,7 @@ pub fn orphaned_anchors(
         .workdir()
         .unwrap_or_else(|| repo.git_dir())
         .to_path_buf();
-    let recent = recent_patch_ids(&repo_dir, 300);
+    let recent = recent_patch_ids(&repo_dir, PATCH_ID_WINDOW);
     orphaned
         .into_iter()
         .map(|sha| {

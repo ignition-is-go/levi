@@ -134,8 +134,13 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         return Ok(());
     }
 
+    let resolution_marker = match resolved.resolution {
+        Resolution::Partial => "  ⚠ unknown anchor",
+        Resolution::Squashed => "  ~ squashed",
+        _ => "",
+    };
     println!(
-        "{} {} [{}] {}",
+        "{} {} [{}] {}{resolution_marker}",
         short_id(&ctx.world, &task_id),
         task.priority.label(),
         resolved.status.label(),

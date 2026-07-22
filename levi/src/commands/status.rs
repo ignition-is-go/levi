@@ -69,7 +69,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, kind: StatusKind, opts: StatusOpts) ->
         && let Some(claim) = ctx.world.live_claim(&task_id, Utc::now())
         && levi_core::rank::claim_is(claim, &ctx.identity)
     {
-        events.push(ctx.del_event(&claim.clone()));
+        events.push(ctx.del_event(claim));
     }
     ctx.append_and_sync(events)?;
 

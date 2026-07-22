@@ -63,7 +63,8 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
             if !world.tasks.contains_key(&task_id) {
                 return false;
             }
-            let mut anc = crate::ancestors::GixAncestors::new(ctx.store.repo());
+            let mut anc = crate::ancestors::GixAncestors::new(ctx.store.repo())
+                .with_window(ctx.config.patch_id_window);
             let is_open = |anc: &mut crate::ancestors::GixAncestors, id: &str| {
                 effective_status(&world.changes_for(id), anc, Resolution::Exact).status
                     == Status::Open
