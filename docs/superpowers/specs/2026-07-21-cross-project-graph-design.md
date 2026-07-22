@@ -9,281 +9,197 @@ local repo's project; the dashboard's Browser page shows one project at a
 time behind a selector; Overview shows per-project rollups.
 
 Note what already works: you can *write* across projects today — `levi add
---project myko "title"` files a bug there, and `levi comment myko/lv-a544
-"..."` lands a comment, both through the hub. What is missing is purely
-**discovery**. Two concrete failures:
+--project myko "title"` files a bug there, `levi comment myko/lv-a544 "..."`
+comments, both through the hub. What is missing is **discovery**. Two
+concrete failures:
 
 1. **An agent cannot assign a cross-project blocker.** `levi dep add <id>
    --on <project>/lv-xxxx` requires the foreign task's id, and nothing in the
-   CLI lists foreign tasks. Today you get the id from a human or the
-   dashboard.
+   CLI lists foreign tasks.
 2. **Blocking relationships are invisible.** Cross-project deps exist
    (levi/lv-39ad and levi/lv-5f11 both wait on myko/lv-a544) and can only be
    seen by opening each task individually.
 
 ## The shape of the data
 
-This drives the visual design: **~200 tasks across 3 projects, 3 dependency
-edges.** A conventional node-link graph of all tasks would be ~195
-unconnected dots with three lines through them — literally "everything and
-the blocking relationships", practically unreadable.
+**~200 tasks across 3 projects, 3 dependency edges.** A node-link graph of
+all tasks would be ~195 unconnected dots with three lines through them —
+literally "everything and the blocking relationships", practically
+unreadable. So the graph shows only tasks that participate in a dependency;
+everything else is a list beside it.
 
-So the graph shows only tasks that participate in a dependency, and
-everything else lives in a list beside it. The picture stays true as the
-backlog grows, because it never draws the parts that have no structure.
+## Architecture: compute on the hub, ship the answer
 
-## Goals
+The governing principle (owner's direction, 2026-07-21): **prefer
+server-side joins; avoid pulling raw entity sets — least of all the fact
+log — across the wire.** The hub holds every project's tasks, status
+changes, and the full CommitFact graph. It is the right place to run
+resolution, and myko already has the machinery: a `ReportHandler` whose
+`compute()` is gated `#[cfg(not(target_arch = "wasm32"))]` runs on the hub,
+queries the hub's own stores in-process, and returns a small computed value.
+The merkle bucket sync (`LogEntryBuckets`) already works exactly this way —
+it hashes the log server-side so only differing buckets transfer.
 
-- The CLI can list another project's issues, in a form directly usable as
-  `levi dep add --on <ref>`.
-- One dashboard page showing every project's issues with blocking drawn.
-- Status reported at a precision each surface can afford, and labelled
-  honestly with which precision that is.
+This inverts the naive design. Instead of a client pulling `GetAllTasks` +
+`GetAllStatusChanges` + `GetAllCommitFacts` and folding locally, the client
+calls a report and the fold happens hub-side over data that never leaves the
+hub. The fold logic still lives in levi-core (native + tested); it is simply
+*invoked* inside the report handler rather than in each consumer.
 
-## Non-goals
-
-- Cross-project ranked work selection (`levi next` hub-wide).
-- New foreign-write capability. `add --project` and `comment` already cover
-  it, and assigning a blocker is a *local* write.
-- Exact per-branch status for foreign projects in the CLI (see Precision).
-- Pagination or virtualized rendering.
-
-## Precision, and why the CLI does less
-
-Resolving a project's task statuses exactly requires walking its CommitFact
-graph — 27,596 facts for myko today. `foreign::refresh_cache` already pays
-that per blocker, and a cross-project `ls` doing it per project per
-invocation would make listing cost megabytes of ancestry.
-
-It is also more precision than the job needs. When choosing a blocker to
-depend on, you need to know the task exists, its id, its title, and roughly
-whether it is done. So the CLI listing resolves status from **StatusChanges
-alone, with no CommitFact fetch**:
-
-- no status change → **open**, definitively, no ancestry required
-- any close event → **closed somewhere**, reported as levi's existing
-  `resolution: partial` — we know a close exists, not which branches contain
-  it
-
-Exact resolution still happens where it matters and is already paid for:
-once a dependency exists, `foreign::refresh_cache` resolves that specific
-blocker properly against its branch, and `levi next` reports the real unblock
-with the `--via` verification note. Precision arrives when it is actionable,
-not while browsing.
-
-The dashboard keeps exact resolution because it already subscribes to every
-CommitFact for other reasons — same core module, different cost profile.
-
-## Shared layer: `levi-core`
-
-Both surfaces fold hub entities into per-project answers. That logic lives in
-levi-core, not in either consumer: levi-dash is wasm-only, excluded from
-`default-members`, and has no test suite, so logic placed there cannot be
-tested in CI. levi-core already owns `resolve`, `materialize`, and `rank`, is
-tested natively, and this is the same kind of pure fold. Today
-`levi-dash/src/resolve_client.rs` holds a per-project resolution helper the
-CLI would otherwise duplicate; it moves to core and the dash keeps a thin
-caller.
-
-### `levi_core::crossproject`
+### New levi-core reports (hub-computed)
 
 ```rust
-/// Status from StatusChanges alone — no ancestry. Open when a task has no
-/// close event; Closed/Partial when it does. What the CLI listing uses.
-pub fn statuses_unanchored(
-    tasks: &[Task],
-    changes: &[StatusChange],
-    project_id: &str,
-) -> BTreeMap<String, ResolvedStatus>;
+// Cheap listing: tasks with unanchored status. No facts touched.
+#[myko_report(TaskListingOut)]
+pub struct TaskListing { pub project_id: Option<String> }  // None = all projects
+pub struct TaskRow { project_id, project, task_id, r#ref, title,
+                     priority, status, resolution }   // ref = "<project>/lv-xxxx"
 
-/// The branch a project resolves against when none is named: its `main`
-/// RefFact if present, else the most recently observed.
-pub fn default_head(refs: &[RefFact], project_id: &str) -> Option<String>;
-
-/// Exact per-branch resolution over the fact graph. What the dashboard uses
-/// (moved from levi-dash/src/resolve_client.rs).
-pub fn statuses_for_project(
-    tasks: &[Task],
-    changes: &[StatusChange],
-    facts: &[CommitFact],
-    project_id: &str,
-    head: Option<&str>,
-) -> BTreeMap<String, ResolvedStatus>;
+// The dependency graph, fully resolved hub-side.
+#[myko_report(IssueGraphOut)]
+pub struct IssueGraphReport {}
+// Output is the IssueGraph below: nodes (with status), edges, unconnected count,
+// broken cycles. The client renders; it never sees a Task, Dependency, or fact.
 ```
 
-### `levi_core::graph`
+Both `compute()` bodies call the pure folds in `levi_core::crossproject` and
+`levi_core::graph` (below), so the logic is unit-tested natively and reused
+by any future consumer. levi-hub picks the reports up through the existing
+`levi_core::link()`.
 
-```rust
-pub struct GraphNode {
-    pub task_id: String,
-    pub project_id: String,
-    pub title: String,
-    pub priority: Priority,
-    pub status: Status,
-    pub layer: usize,        // 0 = blocks something, blocked by nothing
-}
+### Pure folds in levi-core (the tested core)
 
-pub struct GraphEdge {
-    pub blocker_task_id: String,
-    pub blocked_task_id: String,
-    pub blocker_project_id: Option<String>,  // None = same project
-    pub via: Option<String>,
-    pub resolved: bool,      // blocker is closed: the unblock is actionable
-}
+`levi_core::crossproject::statuses_unanchored(tasks, changes, project_id)` —
+status from StatusChanges alone: **open** when a task has no close event,
+**closed (partial)** when it has one. No ancestry, so no facts. This is what
+both the listing and the graph use; branch-exact resolution is more than
+either needs (see Precision).
 
-pub struct IssueGraph {
-    pub nodes: Vec<GraphNode>,
-    pub edges: Vec<GraphEdge>,
-    pub unconnected: Vec<String>,
-    pub broken_cycles: Vec<(String, String)>,
-}
+`levi_core::graph::build(tasks, deps, statuses) -> IssueGraph` — nodes are
+only tasks in a dependency; layered longest-path from the roots
+(deterministic, so no jitter as data arrives); cycles broken and recorded in
+`broken_cycles`; unconnected task ids collected separately. Types as in the
+prior draft (`GraphNode`/`GraphEdge`/`IssueGraph`), `GraphEdge.resolved` set
+from the blocker's status, `via` carried through for cross-project edges.
 
-pub fn build(
-    tasks: &BTreeMap<String, Task>,
-    deps: &BTreeMap<String, Dependency>,
-    statuses: &BTreeMap<String, ResolvedStatus>,
-) -> IssueGraph;
-```
+`levi-dash/src/resolve_client.rs` (branch-exact resolution over facts) moves
+into `levi_core::crossproject::statuses_for_project` so nothing but the
+report handlers ever holds resolution logic.
 
-Layering is longest-path from the roots: a node's layer is one past its
-deepest blocker. Deterministic — a sparse DAG lays out identically every
-render, so nodes don't jitter as live data arrives. Cycles are broken by
-dropping the edge that closes them, recorded in `broken_cycles`; nothing in
-levi prevents filing a mutual block. Nodes sort within a layer by (project,
-priority, created) so render order is stable too.
+## Precision
+
+Resolving *exactly* which branches contain a close needs the CommitFact
+graph. For **choosing a blocker**, that is more than needed: you need the
+task's existence, id, title, and roughly whether it is done. So both new
+surfaces resolve **unanchored** — open / closed(somewhere) — which needs no
+facts at all, on either side of the wire.
+
+Exact per-branch status still happens where it is already paid for: once a
+dependency exists, `foreign::refresh_cache` resolves that blocker against its
+branch and `levi next` reports the true unblock with the `--via` note.
+Precision arrives when it is actionable. (Because facts live on the hub, a
+future report *could* resolve exactly server-side without shipping the graph
+— a cheap upgrade if ever wanted, deliberately not in scope.)
 
 ## Surface 1: CLI
 
-Two mutually exclusive flags on `levi ls`:
+Two mutually exclusive flags on `levi ls`, each backed by the `TaskListing`
+report:
 
-- `--project <name|id>` — one foreign project, resolved through the existing
-  hub registry lookup (which already handles name/id and reports ambiguity).
-- `--all-projects` — every project on the hub, including the local one.
+- `--project <name|id>` — one foreign project (registry lookup handles
+  name/id and ambiguity).
+- `--all-projects` — every project including the local one.
 
-Both require a hub; without one they fail with the established message
-style: "cross-project listing needs a hub: run `levi init --hub <host:port>`".
-Plain `levi ls` is unchanged and stays fully offline.
+Both require a hub; without one they fail "cross-project listing needs a
+hub: run `levi init --hub <host:port>`". Plain `levi ls` is unchanged and
+fully offline. `--json`, `-l`, `--closed`, `--all` apply. `--branch` is
+rejected (names a local branch; meaningless across projects, and unanchored
+resolution has no branch to take).
 
-Cost is flat: both fetch Tasks and StatusChanges only, hub-wide roughly 200
-and 600 rows respectively. `--all-projects` is no more expensive than one
-project.
-
-`--json`, `-l/--label`, `--closed` and `--all` apply as usual. `--branch` is
-rejected with these flags — it names a branch in *this* repo, which is
-meaningless across projects, and the listing does not resolve per-branch
-anyway.
-
-### Output
-
+Text output is project-qualified:
 ```
 myko/lv-a544  P2 open               hub ingest needs bounded queues
 myko/lv-a2ae  P1 closed (somewhere) autosocket frame duplication
 ```
+"closed (somewhere)" states what is known and implies what is not; a bare
+"closed" would claim branch truth this path never established.
 
-"closed (somewhere)" is deliberate: it states what is known and implies what
-is not. A bare "closed" would claim branch-level truth this path never
-established.
-
-JSON adds three fields to the existing task schema:
-
-- `project` — the project's name
-- `project_id` — its id
-- `ref` — the `<project>/lv-xxxx` string, **exactly the form `levi dep add
-  --on` accepts**
-
-`ref` is the point of the feature: discovery to assignment becomes one pipe,
-with no id reconstruction by the caller.
-
+JSON rows are `TaskRow`, whose `ref` field is `<project>/lv-xxxx` — **exactly
+what `levi dep add --on` accepts**. Discovery-to-assignment is one pipe:
 ```
-$ levi ls --project myko --json | jq -r '.tasks[] | select(.title|test("queue")) | .ref'
+$ levi ls --project myko --json | jq -r '.tasks[]|select(.title|test("queue")).ref'
 myko/lv-a544
 $ levi dep add lv-39ad --on myko/lv-a544 --via "cargo: crates.io myko >=4.24.4"
 ```
 
-Rows carry `resolution: "partial"` for anything closed, so a caller can tell
-this listing did not establish branch-level truth. Local rows under
-`--all-projects` come from the real repo and are `exact`.
-
 ## Surface 2: dashboard
 
-A new **Issues** page alongside Overview / Browser / In-Flight. Browser keeps
-its per-project job and branch selector; this answers a different question.
+A new **Issues** page (alongside Overview / Browser / In-Flight) that
+subscribes to a single reactive report — `watch_report(IssueGraphReport)` —
+and renders the returned nodes/edges plus a backlog list from `TaskListing`.
+**It pulls no `GetAllCommitFacts`, no `GetAllTasks`, no `GetAllStatusChanges`.**
+Browser keeps its per-project job, branch selector, and existing fact
+subscription — branch-exact resolution is its actual purpose.
 
-Data comes from live queries the dashboard already issues — `GetAllProjects`,
-`GetAllTasks`, `GetAllStatusChanges`, `GetAllCommitFacts`, `GetAllRefFacts`,
-`GetAllDependencys`. No new hub queries.
+Layout: graph pane left, backlog right, one shared filter row (status, text,
+project). The task drawer is extracted from Browser into a shared component.
 
-Layout: graph pane left, backlog pane right, one shared filter row above
-(status, free text, project multi-select). The task drawer is extracted from
-Browser into a shared component so both pages open the same detail view.
+Visual design follows the dataviz skill: node color = project identity from
+the validated categorical palette in fixed order (name on the node too, so
+never color-alone); left→right layout by layer; **resolved edges dashed and
+muted, not hidden** (a just-closed blocker is the most actionable state —
+"verify it reached you, then start"); edge hover shows `via`; status colors
+from the reserved status palette, always with a label.
 
-Each project resolves exactly, against its own default branch, stated in the
-UI — `main` in levi is unrelated to `main` in myko, and a silently assumed
-basis would mislead.
+### Cost of a reactive server-computed report
 
-### Visual design
-
-Follows the dataviz skill's palette and rules.
-
-- **Node color = project identity**, from the validated categorical palette
-  in fixed order, never cycled. The project name is on the node too, so
-  identity is never color-alone.
-- **Layout left→right by layer**, blockers on the left.
-- **Resolved edges (blocker closed) are dashed and muted, not hidden.** A
-  blocker that just closed is the most actionable state in the system — "go
-  verify the fix reached you, then start" — and hiding it destroys that
-  signal.
-- **Edge hover shows `via`.** For cross-project deps that annotation is the
-  point: "cargo: crates.io myko >=4.24.4" says what must happen before the
-  unblock is real.
-- Status colors come from the reserved status palette and ship with a label.
+`IssueGraphReport` recomputes when its inputs change. Unanchored resolution
+touches only Tasks + StatusChanges + Dependencys (hub-wide ~200 + ~600 + a
+handful) and no facts, so the fold is cheap and — critically — the output is
+small and constant-ish regardless of history size. This is strictly better
+than today's dashboard pages, which stream the entire CommitFact log to every
+browser. Retrofitting Overview/Browser onto computed reports, and moving
+`foreign::refresh_cache` off its full-graph pull, are the obvious next
+applications of this pattern — noted as follow-ups, not this spec.
 
 ## Error and empty states
 
-- **No hub configured**: clear error naming `levi init --hub`.
-- **Unknown or ambiguous project name**: the registry lookup's existing
-  errors, which list candidate ids.
-- **No dependencies anywhere** (dashboard): the graph pane says "nothing is
-  blocked" and the backlog takes full width. This is what a fresh hub looks
-  like; it must not read as a broken chart.
-- **A dependency referencing an unknown task**: render a stub node labelled
-  with its short id and project, visually distinct. Dropping the edge would
-  silently hide a real blocker.
+- **No hub**: clear error naming `levi init --hub`.
+- **Unknown/ambiguous project**: the registry lookup's existing errors.
+- **No dependencies anywhere** (dashboard): graph pane says "nothing is
+  blocked", backlog takes full width. This is a fresh hub; it must not read
+  as broken.
+- **Dependency referencing an unknown task**: a stub node labelled with short
+  id + project, visually distinct — dropping the edge would hide a real
+  blocker.
 - **Cycles**: flagged from `broken_cycles`, naming the dropped edge.
 
 ## Testing
 
-`levi-core` unit tests (native — the reason the logic lives here):
+levi-core unit tests (native — the reason the folds live here):
+- graph: chain layers 0,1,2; diamond; cycle broken/recorded without hanging;
+  cross-project edges carry `blocker_project_id` + `via`; closed blocker marks
+  `resolved`; unconnected tasks excluded from `nodes`; no-dependencies case.
+- crossproject: `statuses_unanchored` open with no changes, partial-closed
+  with a close event, anchors ignored.
 
-- graph: linear chain layers 0,1,2; diamond; cycle broken and recorded
-  without hanging; cross-project edges carry `blocker_project_id` and `via`;
-  a closed blocker marks `resolved`; unconnected tasks excluded from `nodes`;
-  the no-dependencies case
-- crossproject: `statuses_unanchored` reports open with no changes and
-  partial-closed with a close event, ignoring anchors entirely; `default_head`
-  prefers `main`, falls back to most-recently observed, and yields `None`
-  with no RefFacts
-
-CLI integration tests, against the in-process hub already used by
+Report handlers are tested through the in-process hub used by
 `cross_project.rs`:
+- `TaskListing { project_id: Some }` returns that project's rows with correct
+  `ref`; a returned `ref` is accepted verbatim by `levi dep add --on`.
+- `TaskListing { None }` spans projects; a project whose CommitFacts are
+  absent from the hub still lists (proves no fact dependency).
+- `IssueGraphReport` returns the expected nodes/edges for a seeded
+  cross-project dependency.
 
-- `--project <name>` lists the foreign project's tasks with `ref` in
-  `<project>/lv-xxxx` form
-- a `ref` from that output is accepted verbatim by `levi dep add --on`
-- `--all-projects` includes both local and foreign tasks; local rows resolve
-  `exact`, foreign closed rows `partial`
-- listing fetches no CommitFacts (assert against a project whose facts are
-  absent from the hub: it must still list)
-- both flags without a hub fail with the hub-required message
-- `--branch` with either flag is rejected
-
-Dashboard rendering stays untested, as today.
+CLI integration tests: `--project`/`--all-projects` output and `ref`
+round-trip; both flags without a hub fail with the hub-required message;
+`--branch` rejected. Dashboard rendering stays untested, as today.
 
 ## Sequencing
 
-Two implementation plans, in order:
-
-1. **Core layer + CLI** — `crossproject` and `graph` modules, `resolve_client`
-   moved out of the dash, the two `ls` flags. Delivers the blocker-assignment
-   workflow on its own.
-2. **Dashboard Issues page** — consumes the same core modules.
+1. **Core folds + reports + CLI** — `crossproject` and `graph` in levi-core,
+   the `TaskListing` report, `resolve_client` moved into core, the two `ls`
+   flags. Delivers the blocker-assignment workflow.
+2. **Dashboard Issues page** — the `IssueGraphReport` report and the page
+   consuming it.
