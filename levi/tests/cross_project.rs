@@ -382,3 +382,55 @@ fn ls_cross_project_without_hub_fails_clearly() {
         .failure()
         .stderr(predicate::str::contains("need a hub"));
 }
+
+/// Surface 2: the hub computes the whole blocking graph and returns it, so
+/// the dashboard never pulls raw entities. Seed a cross-project dependency,
+/// then ask the hub for the graph over the wire.
+#[test]
+fn issue_graph_report_is_computed_on_the_hub() {
+    use std::time::Duration;
+    let hub_port = start_hub();
+    let (a, b) = two_projects(hub_port);
+
+    // upstream files a blocker; downstream depends on it.
+    let blocker = b.add("bounded ingest queues", &[]);
+    b.levi_ok(&["sync", "--no-git"]);
+    let ls = a.levi_json(&["ls", "--project", "upstream", "--json"]);
+    let the_ref = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["title"] == "bounded ingest queues")
+        .unwrap()["ref"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let blocked = a.add("drop workaround", &[]);
+    a.levi_ok(&["dep", "add", &blocked, "--on", &the_ref, "--via", "cargo: crates.io"]);
+    a.levi_ok(&["sync", "--no-git"]);
+
+    // Ask the hub to compute the graph.
+    let session = levi::hub_client::HubSession::connect(
+        &format!("127.0.0.1:{hub_port}"),
+        Duration::from_secs(10),
+    )
+    .expect("connect to hub");
+    let out: levi_core::graph::IssueGraphOut = session
+        .report_once(levi_core::graph::IssueGraphReport {}, Duration::from_secs(10))
+        .expect("graph report");
+    let g = out.graph;
+
+    // Exactly the two connected tasks are nodes; the edge carries the via.
+    assert!(g.nodes.iter().any(|n| n.task_id == blocker), "blocker node present");
+    assert!(g.nodes.iter().any(|n| n.task_id == blocked), "blocked node present");
+    let edge = g
+        .edges
+        .iter()
+        .find(|e| e.blocked_task_id == blocked)
+        .expect("edge to the blocked task");
+    assert_eq!(edge.blocker_task_id, blocker);
+    assert_eq!(edge.via.as_deref(), Some("cargo: crates.io"));
+    // The blocked task sits one layer past its blocker.
+    let layer = |id: &str| g.nodes.iter().find(|n| n.task_id == id).unwrap().layer;
+    assert_eq!(layer(&blocked), layer(&blocker) + 1);
+}

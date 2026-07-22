@@ -21,6 +21,7 @@ const ICON_OVERVIEW: &str = r##"<svg viewBox="0 0 24 24" fill="none" stroke="cur
 const ICON_FLIGHT: &str = r##"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>"##;
 const ICON_BROWSER: &str = r##"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>"##;
 const ICON_APP: &str = r##"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>"##;
+const ICON_GRAPH: &str = r##"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="6.5" y1="8.5" x2="10.5" y2="15.5"/><line x1="17.5" y1="8.5" x2="13.5" y2="15.5"/></svg>"##;
 
 fn categories() -> Vec<Category<PaneState>> {
     vec![Category {
@@ -50,6 +51,13 @@ fn categories() -> Vec<Category<PaneState>> {
                 icon: ActivityIcon::Svg(ICON_BROWSER.into()),
                 filter: |_| true,
                 render: |_pid, _data| view! { <pages::browser::Browser /> }.into_any(),
+            },
+            ActivityDef {
+                id: ActivityId::new("issues"),
+                name: "Blocking graph".into(),
+                icon: ActivityIcon::Svg(ICON_GRAPH.into()),
+                filter: |_| true,
+                render: |_pid, _data| view! { <pages::issues::Issues /> }.into_any(),
             },
         ],
     }]
