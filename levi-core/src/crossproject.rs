@@ -238,4 +238,41 @@ mod tests {
     fn default_head_none_without_refs() {
         assert_eq!(default_head(&[], "p"), None);
     }
+
+    fn commit(id: &str, project: &str, parents: &[&str]) -> CommitFact {
+        CommitFact {
+            id: id.into(),
+            project_id: project.into(),
+            parents: parents.iter().map(|p| p.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn statuses_for_project_resolves_against_head_via_facts() {
+        // c1 <- c2 <- c3 ; a close anchored at c2.
+        let tasks = vec![task("t1", "p")];
+        let changes = vec![StatusChange {
+            anchor_commit: Some("c2".into()),
+            ..change("x1", "t1", "p", StatusKind::Closed, "2026-02-01T00:00:00Z")
+        }];
+        let facts = vec![
+            commit("c1", "p", &[]),
+            commit("c2", "p", &["c1"]),
+            commit("c3", "p", &["c2"]),
+        ];
+
+        // Against c3 (c2 is an ancestor): closed, exactly (Facts).
+        let at_c3 = statuses_for_project(&tasks, &changes, &facts, "p", Some("c3"));
+        assert_eq!(at_c3["t1"].status, Status::Closed);
+        assert_eq!(at_c3["t1"].resolution, Resolution::Facts);
+
+        // Against c1 (before the fix): open.
+        let at_c1 = statuses_for_project(&tasks, &changes, &facts, "p", Some("c1"));
+        assert_eq!(at_c1["t1"].status, Status::Open);
+
+        // No head: the anchored change is unknown -> open + Partial.
+        let no_head = statuses_for_project(&tasks, &changes, &facts, "p", None);
+        assert_eq!(no_head["t1"].status, Status::Open);
+        assert_eq!(no_head["t1"].resolution, Resolution::Partial);
+    }
 }
