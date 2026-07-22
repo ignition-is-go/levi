@@ -41,6 +41,7 @@ pub fn InFlight() -> impl IntoView {
                 let live = all.iter().filter(|c| claim_live(c)).count();
                 let expired = all.len() - live;
                 let open = RwSignal::new(live > 0);
+                let show_expired = RwSignal::new(false);
                 let dev_header = dev.clone();
                 let titles = titles.clone();
                 view! {
@@ -52,16 +53,24 @@ pub fn InFlight() -> impl IntoView {
                             {(live > 0).then(|| view! {
                                 <Badge variant=BadgeVariant::Success>{format!("{live} live")}</Badge>
                             })}
-                            {(expired > 0).then(|| view! {
-                                <span class="text-muted" style=format!("font-size:{};", tokens::FONT_SIZE_XS)>
-                                    {format!("{expired} expired")}
-                                </span>
+                            {(expired > 0).then(|| {
+                                let show = show_expired;
+                                view! {
+                                    <span
+                                        style=format!("font-size:{};cursor:pointer;", tokens::FONT_SIZE_XS)
+                                        class="text-muted"
+                                        on:click=move |_| show.update(|v| *v = !*v)
+                                    >
+                                        {move || if show.get() { format!("{expired} expired ▾") }
+                                                 else { format!("{expired} expired ▸") }}
+                                    </span>
+                                }
                             })}
                         </div>
                     }.into_any())>
                         {machines
                             .into_iter()
-                            .map(|(machine, worktrees)| machine_block(machine, worktrees, titles.clone()))
+                            .map(|(machine, worktrees)| machine_block(machine, worktrees, titles.clone(), show_expired))
                             .collect_view()}
                     </Disclosure>
                 }
@@ -83,13 +92,14 @@ fn machine_block(
     machine: String,
     worktrees: BTreeMap<String, Claims>,
     titles: std::collections::HashMap<String, String>,
+    show_expired: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
         <div style=format!("margin:{} 0 {} {};", tokens::SPACING_SM, tokens::SPACING_SM, tokens::SPACING_SM)>
             <div class="label">{machine}</div>
             {worktrees
                 .into_iter()
-                .map(|(worktree, claims)| worktree_block(worktree, claims, titles.clone()))
+                .map(|(worktree, claims)| worktree_block(worktree, claims, titles.clone(), show_expired))
                 .collect_view()}
         </div>
     }
@@ -97,33 +107,46 @@ fn machine_block(
 
 fn worktree_block(
     worktree: String,
-    mut claims: Claims,
+    claims: Claims,
     titles: std::collections::HashMap<String, String>,
+    show_expired: RwSignal<bool>,
 ) -> impl IntoView {
-    // Live claims first, then expired; newest within each.
-    claims.sort_by(|a, b| {
-        (!claim_live(a), std::cmp::Reverse(a.created.clone()))
-            .cmp(&(!claim_live(b), std::cmp::Reverse(b.created.clone())))
-    });
-    let wt = worktree.clone();
-    view! {
-        // A subtle rail shows the worktree owns these claims.
-        <div style=format!(
-            "margin-left:{};padding-left:{};border-left:1px solid {};",
-            tokens::SPACING_XS, tokens::SPACING_MD, tokens::BORDER,
-        )>
-            <div class="text-muted trunc" title=worktree style=format!(
-                "font-family:{};font-size:{};margin-bottom:{};",
-                tokens::FONT_MONO, tokens::FONT_SIZE_XS, tokens::SPACING_2XS,
-            )>{wt}</div>
-            {claims
-                .into_iter()
-                .map(move |claim| {
-                    let title = titles.get(&*claim.task_id).cloned();
-                    claim_row(claim, title)
-                })
-                .collect_view()}
-        </div>
+    move || {
+        let mut visible: Claims = if show_expired.get() {
+            claims.clone()
+        } else {
+            claims.iter().filter(|c| claim_live(c)).cloned().collect()
+        };
+        if visible.is_empty() {
+            return ().into_any();
+        }
+        // Live claims first, then expired; newest within each.
+        visible.sort_by(|a, b| {
+            (!claim_live(a), std::cmp::Reverse(a.created.clone()))
+                .cmp(&(!claim_live(b), std::cmp::Reverse(b.created.clone())))
+        });
+        let wt = worktree.clone();
+        let titles = titles.clone();
+        view! {
+            // A subtle rail shows the worktree owns these claims.
+            <div style=format!(
+                "margin-left:{};padding-left:{};border-left:1px solid {};",
+                tokens::SPACING_XS, tokens::SPACING_MD, tokens::BORDER,
+            )>
+                <div class="text-muted trunc" title=worktree.clone() style=format!(
+                    "font-family:{};font-size:{};margin-bottom:{};",
+                    tokens::FONT_MONO, tokens::FONT_SIZE_XS, tokens::SPACING_2XS,
+                )>{wt}</div>
+                {visible
+                    .into_iter()
+                    .map(move |claim| {
+                        let title = titles.get(&*claim.task_id).cloned();
+                        claim_row(claim, title)
+                    })
+                    .collect_view()}
+            </div>
+        }
+        .into_any()
     }
 }
 
