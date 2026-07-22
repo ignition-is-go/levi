@@ -1,6 +1,7 @@
 pub mod add;
 pub mod claim_ops;
 pub mod comment;
+pub mod foreign_ls;
 pub mod dep;
 pub mod edit;
 pub mod init;

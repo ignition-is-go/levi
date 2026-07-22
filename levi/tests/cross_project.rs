@@ -313,3 +313,72 @@ fn machine_id_distinguishes_identical_hostname_and_worktree() {
     // Machine A still owns it.
     levi_as(&state_a, &["drop", &task]).assert().success();
 }
+
+/// lv (cross-project listing): `levi ls --project` surfaces a foreign
+/// project's tasks with a `ref` that `levi dep add --on` accepts verbatim,
+/// and does so without fetching any CommitFacts.
+#[test]
+fn ls_project_lists_foreign_tasks_and_ref_round_trips() {
+    let hub_port = start_hub();
+    let (a, b) = two_projects(hub_port);
+
+    // B files a task in its own project and pushes it to the hub.
+    let b_task = b.add("bounded ingest queues", &[]);
+    b.levi_ok(&["sync", "--no-git"]);
+
+    // A lists B's project through the hub — no local knowledge of it.
+    let ls = a.levi_json(&["ls", "--project", "upstream", "--json"]);
+    let row = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["title"] == "bounded ingest queues")
+        .expect("foreign task listed");
+    assert_eq!(row["project"], "upstream");
+    let the_ref = row["ref"].as_str().unwrap().to_string();
+    assert!(the_ref.starts_with("upstream/lv-"), "ref: {the_ref}");
+    assert!(the_ref.contains(&b_task[..8]), "ref must name the task: {the_ref}");
+
+    // The ref is accepted verbatim by `dep add --on`.
+    let local = a.add("drop workaround once upstream ships", &[]);
+    a.levi_ok(&["dep", "add", &local, "--on", &the_ref, "--via", "cargo: crates.io"]);
+    let show = a.levi_json(&["show", &local, "--json"]);
+    assert_eq!(
+        show["blocked_by"][0]["id"].as_str().unwrap(),
+        b_task,
+        "the dependency resolved to B's task"
+    );
+}
+
+/// `--all-projects` spans projects; a project whose CommitFacts never reached
+/// the hub still lists (proving the listing needs no facts).
+#[test]
+fn ls_all_projects_needs_no_facts() {
+    let hub_port = start_hub();
+    let (a, b) = two_projects(hub_port);
+    a.add("local downstream task", &[]);
+    a.levi_ok(&["sync", "--no-git"]);
+    b.add("upstream task", &[]);
+    b.levi_ok(&["sync", "--no-git"]);
+
+    let ls = a.levi_json(&["ls", "--all-projects", "--json"]);
+    let titles: Vec<&str> = ls["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["title"].as_str().unwrap())
+        .collect();
+    assert!(titles.contains(&"local downstream task"), "got: {titles:?}");
+    assert!(titles.contains(&"upstream task"), "got: {titles:?}");
+}
+
+/// Both cross-project flags require a hub.
+#[test]
+fn ls_cross_project_without_hub_fails_clearly() {
+    let repo = TestRepo::new();
+    repo.init();
+    repo.levi(&["ls", "--all-projects"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("need a hub"));
+}
