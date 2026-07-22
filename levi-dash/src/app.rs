@@ -63,7 +63,11 @@ fn categories() -> Vec<Category<PaneState>> {
     }]
 }
 
-const WORKSPACES_KEY: &str = "levi.workspaces";
+// Bumped to v2 when the default layout was redefined (two columns: overview
+// / projects / claims stacked left, graph right). The bump makes the new
+// default reach anyone with a stored v1 layout — it resets saved workspaces,
+// which is intended when the default itself changes.
+const WORKSPACES_KEY: &str = "levi.workspaces.v2";
 const LEGACY_LAYOUT_KEY: &str = "levi.layout";
 
 fn leaf(id: &str, activity: &str) -> Box<PaneNode<PaneState>> {
@@ -74,19 +78,24 @@ fn leaf(id: &str, activity: &str) -> Box<PaneNode<PaneState>> {
     ))
 }
 
-/// "Main": the project browser as the working pane, overview + in-flight
-/// stacked in a side column.
+/// "Main": two columns. Left column stacks overview / projects / claims
+/// top-to-bottom; the blocking graph takes the wider right column.
 fn main_tree() -> PaneNode<PaneState> {
     PaneNode::Split {
         direction: SplitDirection::Horizontal,
-        ratio: 0.62,
-        first: leaf("main-browser", "browser"),
-        second: Box::new(PaneNode::Split {
+        ratio: 0.42,
+        first: Box::new(PaneNode::Split {
             direction: SplitDirection::Vertical,
-            ratio: 0.5,
+            ratio: 0.34,
             first: leaf("main-overview", "overview"),
-            second: leaf("main-flight", "in-flight"),
+            second: Box::new(PaneNode::Split {
+                direction: SplitDirection::Vertical,
+                ratio: 0.5,
+                first: leaf("main-browser", "browser"),
+                second: leaf("main-flight", "in-flight"),
+            }),
         }),
+        second: leaf("main-graph", "issues"),
     }
 }
 
@@ -204,7 +213,9 @@ pub fn App() -> impl IntoView {
              .levi-rowlink{cursor:pointer;border-radius:0.25rem;}\
              .levi-rowlink:hover{background:oklch(1 0 0 / 0.04);}\
              .levi-fill{flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:0;}\
-             .levi-fill .pane-content{flex:1;min-height:0;overflow-y:auto;}"
+             .levi-fill .pane-content{flex:1;min-height:0;overflow-y:auto;}\
+             .levi-select-wide>.dropdown__trigger{width:12rem;}\
+             .levi-select-wide .dropdown__value{flex:1;text-align:left;}"
         </style>
         <MullionProvider
             initial_tree=initial_tree

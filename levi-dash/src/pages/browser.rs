@@ -11,6 +11,9 @@ use pulse_leptos_ui::{
 
 use crate::resolve_client;
 
+/// Sentinel project id for the "all projects" option.
+const ALL_PROJECTS: &str = "__all__";
+
 /// Priority → badge variant (P0 error, P1 warning, else neutral). Shared by
 /// the list rows and the detail drawer so a priority always reads the same.
 fn priority_badge(p: Priority) -> BadgeVariant {
@@ -47,12 +50,24 @@ pub fn Browser() -> impl IntoView {
         }
     });
 
+    // "all projects" sentinel — resolves every project against its own
+    // default branch and shows them together.
     let project_options = Signal::derive(move || {
+        let mut opts = vec![(ALL_PROJECTS.to_string(), "all projects".to_string())];
+        opts.extend(
+            projects
+                .get()
+                .iter()
+                .map(|p| (p.id.to_string(), p.name.clone())),
+        );
+        opts
+    });
+    let project_names = Signal::derive(move || {
         projects
             .get()
             .iter()
             .map(|p| (p.id.to_string(), p.name.clone()))
-            .collect::<Vec<_>>()
+            .collect::<std::collections::HashMap<_, _>>()
     });
 
     let branches = move || {
@@ -92,24 +107,53 @@ pub fn Browser() -> impl IntoView {
 
     let rows = move || {
         let pid = sel_project.get();
+        let is_all = pid == ALL_PROJECTS;
         let tasks_now = tasks.get();
-        let statuses = resolve_client::statuses(
-            &tasks_now,
-            &changes.get(),
-            &commit_facts.get(),
-            &pid,
-            head().as_deref(),
-        );
+        let changes_now = changes.get();
+        let cf_now = commit_facts.get();
+        let refs_now = ref_facts.get();
+
+        // Which (project, head) pairs to resolve. For "all", every project
+        // against its own default branch; otherwise the single selection.
+        let default_head = |ppid: &str| {
+            refs_now
+                .iter()
+                .filter(|r| r.project_id == ppid)
+                .min_by_key(|r| (r.branch != "main", r.branch.clone()))
+                .map(|r| r.head.clone())
+        };
+        let scope: Vec<(String, Option<String>)> = if is_all {
+            let mut ps: Vec<String> = tasks_now.iter().map(|t| t.project_id.clone()).collect();
+            ps.sort();
+            ps.dedup();
+            ps.into_iter().map(|p| { let h = default_head(&p); (p, h) }).collect()
+        } else {
+            vec![(pid.clone(), head())]
+        };
+
+        let mut statuses = std::collections::BTreeMap::new();
+        for (ppid, phead) in &scope {
+            statuses.extend(resolve_client::statuses(
+                &tasks_now,
+                &changes_now,
+                &cf_now,
+                ppid,
+                phead.as_deref(),
+            ));
+        }
+        let names = project_names.get();
+        let in_scope = |t: &Task| is_all || t.project_id == pid;
+
         let all_ids: Vec<String> = tasks_now
             .iter()
-            .filter(|t| t.project_id == pid)
+            .filter(|t| in_scope(t))
             .map(|t| t.id.to_string())
             .collect();
         let want_status = filter_status.get();
         let needle = filter_text.get().to_lowercase();
         let mut rows: Vec<_> = tasks_now
             .iter()
-            .filter(|t| t.project_id == pid)
+            .filter(|t| in_scope(t))
             .filter(|t| {
                 let resolved = &statuses[&*t.id.0];
                 match want_status.as_str() {
@@ -135,6 +179,11 @@ pub fn Browser() -> impl IntoView {
             .map(|task| {
                 let id = task.id.to_string();
                 let resolved = statuses[&id];
+                let project_name = if is_all {
+                    names.get(&task.project_id).cloned().unwrap_or_default()
+                } else {
+                    String::new()
+                };
                 let title = task.title.clone();
                 let labels = task.labels.clone();
                 let priority = task.priority;
@@ -160,6 +209,12 @@ pub fn Browser() -> impl IntoView {
                             tokens::SPACING_XS, tokens::SPACING_SM, tokens::BORDER,
                         )
                     >
+                        {(!project_name.is_empty()).then(|| view! {
+                            <span class="text-muted trunc" style=format!(
+                                "font-size:{};width:6rem;white-space:nowrap;",
+                                tokens::FONT_SIZE_XS,
+                            )>{project_name}</span>
+                        })}
                         <span class="text-muted" style=format!(
                             "font-family:{};font-size:{};white-space:nowrap;",
                             tokens::FONT_MONO, tokens::FONT_SIZE_XS,
@@ -168,7 +223,9 @@ pub fn Browser() -> impl IntoView {
                         </span>
                         <Badge variant=priority_variant>{priority.label()}</Badge>
                         <Status variant=status_variant>{status_label}</Status>
-                        <span class="trunc" title=title_attr style="flex:1;">{title}</span>
+                        <span class="trunc" title=title_attr style=format!(
+                            "flex:1;font-size:{};", tokens::FONT_SIZE_SM,
+                        )>{title}</span>
                         {(!labels.is_empty()).then(|| view! {
                             <span class="text-muted" style=format!(
                                 "font-size:{};white-space:nowrap;",
@@ -297,7 +354,7 @@ pub fn Browser() -> impl IntoView {
                                         <Status variant=variant>{label}</Status>
                                         <span class="text-muted" style=format!(
                                             "font-family:{};font-size:{};",
-                                            tokens::FONT_MONO, tokens::FONT_SIZE_2XS,
+                                            tokens::FONT_MONO, tokens::FONT_SIZE_XS,
                                         )>
                                             {format!(
                                                 "{}{anchor} by {}",
@@ -321,7 +378,7 @@ pub fn Browser() -> impl IntoView {
                                         <div style=format!("display:flex;flex-direction:column;gap:{};", tokens::SPACING_2XS)>
                                             <span class="text-muted" style=format!(
                                                 "font-family:{};font-size:{};",
-                                                tokens::FONT_MONO, tokens::FONT_SIZE_2XS,
+                                                tokens::FONT_MONO, tokens::FONT_SIZE_XS,
                                             )>
                                                 {format!("{} · {}", comment.created.get(..19).unwrap_or(""), comment.by_dev)}
                                             </span>
@@ -355,6 +412,7 @@ pub fn Browser() -> impl IntoView {
                     on_change=Callback::new(move |v| sel_project.set(v))
                     options=project_options
                     placeholder="project"
+                    class="levi-select-wide"
                 />
                 <Select
                     value=Signal::derive(move || sel_branch.get())
