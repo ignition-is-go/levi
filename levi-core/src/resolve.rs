@@ -80,7 +80,11 @@ impl Resolution {
                 Resolution::Facts | Resolution::Exact => 2,
             }
         }
-        if rank(other) < rank(self) { other } else { self }
+        if rank(other) < rank(self) {
+            other
+        } else {
+            self
+        }
     }
 }
 
@@ -188,7 +192,11 @@ impl AncestorSet for FactsAncestors {
         {
             return Ancestry::Rewritten;
         }
-        if self.complete { Ancestry::No } else { Ancestry::Unknown }
+        if self.complete {
+            Ancestry::No
+        } else {
+            Ancestry::Unknown
+        }
     }
 }
 
@@ -512,9 +520,11 @@ mod tests {
                 ("c1".to_string(), fact("c1", &[], Some("pX"))),
                 ("c2".to_string(), fact("c2", &["c1"], Some("pOther"))),
                 ("X".to_string(), fact("X", &[], Some("pX"))),
-            ].into_iter().collect();
+            ]
+            .into_iter()
+            .collect();
             let mut anc = FactsAncestors::new(&facts, "c2");
-            assert_eq!(anc.contains("c1"), Ancestry::Yes);      // exact, reachable
+            assert_eq!(anc.contains("c1"), Ancestry::Yes); // exact, reachable
             assert_eq!(anc.contains("X"), Ancestry::Rewritten); // squashed, patch match
         }
 
@@ -524,7 +534,9 @@ mod tests {
             let facts: BTreeMap<String, CommitFact> = [
                 ("c1".to_string(), fact("c1", &[], Some("pA"))),
                 ("X".to_string(), fact("X", &[], Some("pB"))),
-            ].into_iter().collect();
+            ]
+            .into_iter()
+            .collect();
             let mut anc = FactsAncestors::new(&facts, "c1");
             assert_eq!(anc.contains("X"), Ancestry::No);
         }
@@ -535,7 +547,9 @@ mod tests {
             let facts: BTreeMap<String, CommitFact> = [
                 ("c1".to_string(), fact("c1", &[], Some("pA"))),
                 ("X".to_string(), fact("X", &[], None)),
-            ].into_iter().collect();
+            ]
+            .into_iter()
+            .collect();
             let mut anc = FactsAncestors::new(&facts, "c1");
             assert_eq!(anc.contains("X"), Ancestry::No);
         }
@@ -545,7 +559,9 @@ mod tests {
         fn rewritten_resolves_closed_squashed() {
             struct Rw;
             impl AncestorSet for Rw {
-                fn contains(&mut self, _sha: &str) -> Ancestry { Ancestry::Rewritten }
+                fn contains(&mut self, _sha: &str) -> Ancestry {
+                    Ancestry::Rewritten
+                }
             }
             let ch = closed_change("deadbeef");
             let got = effective_status(&[&ch], &mut Rw, Resolution::Exact);
@@ -557,11 +573,23 @@ mod tests {
         /// Grade fold keeps the weakest: Partial beats Squashed beats Exact.
         #[test]
         fn resolution_weaken_orders_partial_below_squashed_below_exact() {
-            assert_eq!(Resolution::Exact.weaken(Resolution::Squashed), Resolution::Squashed);
-            assert_eq!(Resolution::Squashed.weaken(Resolution::Partial), Resolution::Partial);
-            assert_eq!(Resolution::Facts.weaken(Resolution::Squashed), Resolution::Squashed);
+            assert_eq!(
+                Resolution::Exact.weaken(Resolution::Squashed),
+                Resolution::Squashed
+            );
+            assert_eq!(
+                Resolution::Squashed.weaken(Resolution::Partial),
+                Resolution::Partial
+            );
+            assert_eq!(
+                Resolution::Facts.weaken(Resolution::Squashed),
+                Resolution::Squashed
+            );
             // A stronger grade never upgrades a weaker one.
-            assert_eq!(Resolution::Squashed.weaken(Resolution::Exact), Resolution::Squashed);
+            assert_eq!(
+                Resolution::Squashed.weaken(Resolution::Exact),
+                Resolution::Squashed
+            );
         }
     }
 }

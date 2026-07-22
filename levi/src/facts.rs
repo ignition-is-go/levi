@@ -99,8 +99,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         .unwrap_or_else(|| repo.git_dir())
         .to_path_buf();
     let window = ctx.config.patch_id_window;
-    let mut patch_of: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut patch_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     // Windowed commits per head.
     if let Ok(refs) = repo.references()
         && let Ok(iter) = refs.prefixed("refs/heads/")
@@ -108,9 +107,11 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         for reference in iter.flatten() {
             let mut reference = reference;
             if let Ok(id) = reference.peel_to_id() {
-                for (patch, sha) in
-                    crate::ancestors::recent_patch_ids_of(&repo_dir, &id.detach().to_string(), window)
-                {
+                for (patch, sha) in crate::ancestors::recent_patch_ids_of(
+                    &repo_dir,
+                    &id.detach().to_string(),
+                    window,
+                ) {
                     patch_of.entry(sha).or_insert(patch);
                 }
             }

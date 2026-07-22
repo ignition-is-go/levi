@@ -237,17 +237,23 @@ fn close_releases_the_claim() {
 
     // Claim it, then close — the claim should be gone.
     repo.levi_ok(&["start", &id]);
-    assert!(repo.levi_json(&["show", &id, "--json"])["claim"].is_object(),
-        "claimed before close");
+    assert!(
+        repo.levi_json(&["show", &id, "--json"])["claim"].is_object(),
+        "claimed before close"
+    );
     repo.levi_ok(&["close", &id]);
-    assert!(repo.levi_json(&["show", &id, "--json"])["claim"].is_null(),
-        "claim released on close");
+    assert!(
+        repo.levi_json(&["show", &id, "--json"])["claim"].is_null(),
+        "claim released on close"
+    );
 
     // Reopen + claim + close --no-drop keeps the claim.
     repo.levi_ok(&["reopen", &id]);
     repo.levi_ok(&["start", &id]);
     repo.commit("more");
     repo.levi_ok(&["close", &id, "--no-drop"]);
-    assert!(repo.levi_json(&["show", &id, "--json"])["claim"].is_object(),
-        "--no-drop keeps the claim");
+    assert!(
+        repo.levi_json(&["show", &id, "--json"])["claim"].is_object(),
+        "--no-drop keeps the claim"
+    );
 }
