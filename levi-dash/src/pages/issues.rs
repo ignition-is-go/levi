@@ -173,19 +173,24 @@ fn Summary(graph: IssueGraph) -> impl IntoView {
 }
 
 #[component]
-fn GraphCanvas(
-    graph: IssueGraph,
-    colors: Vec<(String, String)>,
-    names: Names,
-) -> impl IntoView {
+fn GraphCanvas(graph: IssueGraph, colors: Vec<(String, String)>, names: Names) -> impl IntoView {
     // Index the report's nodes, then split into weakly-connected components and
     // lay each one out on its own (rebased columns + barycenter row order).
-    let node_by_id: BTreeMap<String, GraphNode> =
-        graph.nodes.iter().map(|n| (n.task_id.clone(), n.clone())).collect();
-    let layer_of: BTreeMap<String, usize> =
-        graph.nodes.iter().map(|n| (n.task_id.clone(), n.layer)).collect();
-    let prio_of: BTreeMap<String, u8> =
-        graph.nodes.iter().map(|n| (n.task_id.clone(), n.priority.rank())).collect();
+    let node_by_id: BTreeMap<String, GraphNode> = graph
+        .nodes
+        .iter()
+        .map(|n| (n.task_id.clone(), n.clone()))
+        .collect();
+    let layer_of: BTreeMap<String, usize> = graph
+        .nodes
+        .iter()
+        .map(|n| (n.task_id.clone(), n.layer))
+        .collect();
+    let prio_of: BTreeMap<String, u8> = graph
+        .nodes
+        .iter()
+        .map(|n| (n.task_id.clone(), n.priority.rank()))
+        .collect();
     let node_ids: Vec<String> = graph.nodes.iter().map(|n| n.task_id.clone()).collect();
     let edges: Vec<(String, String)> = graph
         .edges
@@ -411,7 +416,8 @@ struct Section {
 
 /// Union-find over node ids to find weakly-connected components.
 fn components(node_ids: &[String], edges: &[(String, String)]) -> BTreeMap<String, Vec<String>> {
-    let mut parent: BTreeMap<String, String> = node_ids.iter().map(|i| (i.clone(), i.clone())).collect();
+    let mut parent: BTreeMap<String, String> =
+        node_ids.iter().map(|i| (i.clone(), i.clone())).collect();
     fn find(parent: &mut BTreeMap<String, String>, x: &str) -> String {
         let p = parent[x].clone();
         if p == x {
@@ -482,13 +488,14 @@ fn layout_component(
     let mut present: Vec<usize> = ids.iter().map(|id| layer_of[id]).collect();
     present.sort_unstable();
     present.dedup();
-    let col_of: BTreeMap<usize, usize> =
-        present.iter().enumerate().map(|(i, &l)| (l, i)).collect();
+    let col_of: BTreeMap<usize, usize> = present.iter().enumerate().map(|(i, &l)| (l, i)).collect();
 
     // Columns keyed by dense-ranked layer; seed each with a deterministic order.
     let mut cols: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     for id in &ids {
-        cols.entry(col_of[&layer_of[id]]).or_default().push(id.clone());
+        cols.entry(col_of[&layer_of[id]])
+            .or_default()
+            .push(id.clone());
     }
     for v in cols.values_mut() {
         v.sort_by(|a, b| (prio_of[a], a).cmp(&(prio_of[b], b)));

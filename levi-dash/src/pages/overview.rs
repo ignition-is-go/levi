@@ -52,7 +52,10 @@ pub fn Overview() -> impl IntoView {
                     &pid,
                     head.as_deref(),
                 );
-                let open = statuses.values().filter(|s| s.status == TaskStatus::Open).count();
+                let open = statuses
+                    .values()
+                    .filter(|s| s.status == TaskStatus::Open)
+                    .count();
                 let closed = statuses.len() - open;
                 let p0: Vec<String> = tasks
                     .iter()

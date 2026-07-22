@@ -126,7 +126,12 @@ pub fn Browser() -> impl IntoView {
             let mut ps: Vec<String> = tasks_now.iter().map(|t| t.project_id.clone()).collect();
             ps.sort();
             ps.dedup();
-            ps.into_iter().map(|p| { let h = default_head(&p); (p, h) }).collect()
+            ps.into_iter()
+                .map(|p| {
+                    let h = default_head(&p);
+                    (p, h)
+                })
+                .collect()
         } else {
             vec![(pid.clone(), head())]
         };
