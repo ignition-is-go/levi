@@ -32,17 +32,35 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             label,
             branch,
             mine,
-        } => commands::ls::run(
-            &mut ctx,
-            commands::ls::LsOpts {
-                json,
-                all,
-                closed,
-                label,
-                branch,
-                mine,
-            },
-        ),
+            project,
+            all_projects,
+        } => {
+            if project.is_some() || all_projects {
+                commands::foreign_ls::run(
+                    &ctx,
+                    commands::foreign_ls::ForeignLsOpts {
+                        project,
+                        all_projects,
+                        json,
+                        all,
+                        closed,
+                        label,
+                    },
+                )
+            } else {
+                commands::ls::run(
+                    &mut ctx,
+                    commands::ls::LsOpts {
+                        json,
+                        all,
+                        closed,
+                        label,
+                        branch,
+                        mine,
+                    },
+                )
+            }
+        }
         Cmd::Show { id, json } => commands::show::run(&ctx, &id, json),
         Cmd::Close {
             id,

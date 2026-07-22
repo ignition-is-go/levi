@@ -64,11 +64,17 @@ pub enum Cmd {
         #[arg(short = 'l', long = "label")]
         label: Option<String>,
         /// Resolve against this branch instead of HEAD.
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["project", "all_projects"])]
         branch: Option<String>,
         /// Only tasks claimed by me (this dev/machine/worktree).
         #[arg(long)]
         mine: bool,
+        /// List another project's tasks via the hub (name or id).
+        #[arg(long, conflicts_with = "all_projects")]
+        project: Option<String>,
+        /// List every project's tasks via the hub.
+        #[arg(long)]
+        all_projects: bool,
     },
     /// Task detail: body, comments, deps, claim, status history.
     Show {
