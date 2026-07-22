@@ -3,6 +3,7 @@
 //! §Anchoring rules).
 
 use anyhow::{Result, bail};
+use chrono::Utc;
 use levi_core::ids::{resolve_prefix, short_id};
 use levi_core::resolve::{Resolution, Status, effective_status};
 use levi_core::{StatusChange, StatusKind};
@@ -13,6 +14,7 @@ pub struct StatusOpts {
     pub anchor: Option<String>,
     pub no_anchor: bool,
     pub force: bool,
+    pub no_drop: bool,
 }
 
 pub fn run(ctx: &LeviCtx, id_input: &str, kind: StatusKind, opts: StatusOpts) -> Result<()> {
@@ -59,7 +61,17 @@ pub fn run(ctx: &LeviCtx, id_input: &str, kind: StatusKind, opts: StatusOpts) ->
         by_dev: ctx.identity.dev.clone(),
         by_machine: ctx.identity.machine.clone(),
     };
-    ctx.append_and_sync(vec![ctx.set_event(&change)])?;
+
+    // Releasing the claim on close/reopen is the natural end of holding a task
+    // (spec 2026-07-22). Only our own live claim; never someone else's.
+    let mut events = vec![ctx.set_event(&change)];
+    if !opts.no_drop
+        && let Some(claim) = ctx.world.live_claim(&task_id, Utc::now())
+        && levi_core::rank::claim_is(claim, &ctx.identity)
+    {
+        events.push(ctx.del_event(&claim.clone()));
+    }
+    ctx.append_and_sync(events)?;
 
     let verb = match kind {
         StatusKind::Closed => "closed",

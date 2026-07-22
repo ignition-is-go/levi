@@ -110,6 +110,9 @@ pub enum Cmd {
         /// Allow a redundant transition (already closed here).
         #[arg(long)]
         force: bool,
+        /// Keep the claim instead of releasing it on close/reopen.
+        #[arg(long)]
+        no_drop: bool,
     },
     /// Reopen a task, anchored at HEAD by default.
     Reopen {
@@ -120,6 +123,9 @@ pub enum Cmd {
         no_anchor: bool,
         #[arg(long)]
         force: bool,
+        /// Keep the claim instead of releasing it on close/reopen.
+        #[arg(long)]
+        no_drop: bool,
     },
     /// Manage dependencies between tasks.
     Dep {
