@@ -799,7 +799,7 @@ dependencies = [
 [[package]]
 name = "css-spec-data"
 version = "0.1.0"
-source = "git+https://github.com/ignition-is-go/css-styled.git#b88a44ce818be5a6bd67d72d6e475fe9d944e3a4"
+source = "git+https://github.com/ignition-is-go/css-styled.git#3c48c5ac14df679511288e32480e87895ecba241"
 dependencies = [
  "serde",
  "serde_json",
@@ -809,7 +809,7 @@ dependencies = [
 [[package]]
 name = "css-styled"
 version = "0.1.0"
-source = "git+https://github.com/ignition-is-go/css-styled.git#b88a44ce818be5a6bd67d72d6e475fe9d944e3a4"
+source = "git+https://github.com/ignition-is-go/css-styled.git#3c48c5ac14df679511288e32480e87895ecba241"
 dependencies = [
  "css-spec-data",
  "css-styled-derive",
@@ -818,7 +818,7 @@ dependencies = [
 [[package]]
 name = "css-styled-derive"
 version = "0.1.0"
-source = "git+https://github.com/ignition-is-go/css-styled.git#b88a44ce818be5a6bd67d72d6e475fe9d944e3a4"
+source = "git+https://github.com/ignition-is-go/css-styled.git#3c48c5ac14df679511288e32480e87895ecba241"
 dependencies = [
  "css-spec-data",
  "lightningcss",
@@ -1150,7 +1150,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1843,7 +1843,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b305d85504de270ad3525d726a6b69cc59ee7b2269b014387651107ab9f0755b"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -3377,8 +3377,8 @@ dependencies = [
 
 [[package]]
 name = "mullion"
-version = "0.1.0"
-source = "git+https://github.com/ignition-is-go/mullion?branch=main#b5504c18e09d32a8b5fb3f8951ee4bfd25bebae4"
+version = "1.1.0"
+source = "git+https://github.com/ignition-is-go/mullion?branch=main#0936d20089f2e5140a908478c498af328d293ade"
 dependencies = [
  "css-styled",
  "leptos",
@@ -3537,7 +3537,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4668,7 +4668,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5239,7 +5239,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6172,7 +6172,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
