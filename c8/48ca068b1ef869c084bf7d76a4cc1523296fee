@@ -1,0 +1,18 @@
+¶ditem©dbodyyîCross-project blocker refs accept only the FULL uuid. The short form fails, including the exact string levi prints back to you.
+
+REPRO (myko side -> rship side, hub levi-hub-01:7377, levi 0.4.x, 2026-07-27):
+  levi dep add lv-865b --on myko/lv-3816                              -> error: no task matches 'myko/lv-3816'
+  levi dep add lv-865b --on myko/3816c03250c342beb8e34b89ac5bf7fb     -> OK, 'lv-865b is blocked by myko/lv-3816'
+Same project, same task, only the id form differs.
+
+THE ROUND-TRIP BUG, which is the cleanest way in: levi's own OUTPUT is in short form. The success line prints 'blocked by myko/lv-3816', and 'levi show lv-865b --json'.blocked_by[0].short is 'de941657/lv-3816'. So it emits a form it will not accept as input ‚Äî copy levi's own output back into 'dep add --on' and it fails.
+
+RULED OUT (so this isn't chased as sync/staleness, which is where it naturally sends you):
+- Project resolves fine. 'myko' is correct and registered (Project event: id de9416570df4447d8687b0103b13ae27, name 'myko').
+- The two error messages are DIFFERENT failures and only one is real: an unknown project gives "no project named 'X' on the hub", while 'myko/lv-3816' gives "no task matches" ‚Äî project resolved, task lookup inside it failed. Worth keeping these distinct; the current wording sent us to re-run syncs.
+- Not staleness. 'levi sync' on both sides clean; myko side reports 'hub: pushed 0, pulled 0' across two consecutive runs, and the git leg is verified published ‚Äî 'git ls-remote origin refs/levi/*' matches local refs/levi/events exactly at dec3dc5e.
+- The read path works end to end once resolved: the edge came back resolution 'exact' with the foreign title pulled across.
+
+LIKELY CAUSE: short ids are local abbreviations of the uuid, and there's no expansion of a foreign project's id space during cross-project ref resolution. Either expand short ids against the hub-side project, or reject them with a message that says the full uuid is required ‚Äî and ideally print the full uuid in dep output so the round trip closes.
+
+Filed from myko (project 'myko') by the myko-advanced-query-live session; no levi session was on the marshal roster to hand it to directly.gcreatedx2026-07-27T20:26:10.027931ZlcreatedByDevxtrevor.a.sargent@gmail.compcreatedByMachinegmalcolmbidx 990624e8df344891abf986bfd1914aa4flabelsÅcbughprioritybP2iprojectIdx 7075a6bebff84aefa6fb99bbfbd830eaetitlex_dep add --on rejects the short id form that levi itself prints (cross-project round-trip fails)jchangeTypecSEThitemTypedTaskicreatedAtx2026-07-27T20:26:10.027949Zbtxx$c41c1903-1f3b-48e2-bcf2-103b1862bc7dhsourceIdgmalcolm
