@@ -1150,7 +1150,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1843,7 +1843,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b305d85504de270ad3525d726a6b69cc59ee7b2269b014387651107ab9f0755b"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -3377,8 +3377,8 @@ dependencies = [
 
 [[package]]
 name = "mullion"
-version = "1.1.0"
-source = "git+https://github.com/ignition-is-go/mullion?branch=main#0936d20089f2e5140a908478c498af328d293ade"
+version = "1.2.0"
+source = "git+https://github.com/ignition-is-go/mullion?rev=e8bfe0344b2d1bebff2bdd1fa65a86319c71df20#e8bfe0344b2d1bebff2bdd1fa65a86319c71df20"
 dependencies = [
  "css-styled",
  "leptos",
@@ -3537,7 +3537,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4216,9 +4216,9 @@ dependencies = [
 
 [[package]]
 name = "pulse-leptos-ui"
-version = "0.9.1"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "345d3b73d85d3f6fa1c76f0d2d86dae56437f4fdabdb74db1a173cafbf03c85b"
+checksum = "959b52368fd362830fe97e81db2f091d3e9162152e2275f03bd8f2d981c3e387"
 dependencies = [
  "icondata",
  "js-sys",
@@ -4668,7 +4668,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5239,7 +5239,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6172,7 +6172,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
