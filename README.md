@@ -92,6 +92,18 @@ commit facts alone.
 [mullion]: https://github.com/ignition-is-go/mullion
 [pulse-leptos-ui]: https://crates.io/crates/pulse-leptos-ui
 
+## Pi extension
+
+The [`@levi-tracker/pi`](plugins/levi-pi/) package gives Pi native Levi tools,
+a `/levi` task picker, task-ID completion, and current-claim status:
+
+```sh
+pi install npm:@levi-tracker/pi
+```
+
+It delegates every operation to the installed `levi` CLI, keeping the event
+log and git-aware resolution semantics authoritative.
+
 ## Testing
 
 `cargo test --workspace` covers the resolution fold and ranking (pure unit

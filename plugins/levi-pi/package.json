@@ -1,0 +1,47 @@
+{
+  "name": "@levi-tracker/pi",
+  "version": "0.8.0",
+  "description": "Pi extension for the Levi git-aware task tracker: native agent tools, an interactive task picker, task-ID completion, and current-claim status.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "levi",
+    "issue-tracker",
+    "coding-agent"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "flux": {
+    "bridges": [
+      "cargo:levi"
+    ],
+    "tasks": [
+      "check",
+      "publish"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  }
+}

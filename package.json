@@ -1,0 +1,7 @@
+{
+  "name": "levi-workspace",
+  "private": true,
+  "workspaces": [
+    "plugins/levi-pi"
+  ]
+}

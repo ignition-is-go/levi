@@ -4,6 +4,7 @@ main = "production"
 [tasks.check]
 workspace_batchable = true
 cargo = ["cargo", "check", "--target-dir", "target/claude"]
+npm = ["npm", "run", "check"]
 
 [tasks.build]
 workspace_batchable = true
@@ -30,3 +31,4 @@ cascade = "all"
 autoapply = "inherit"
 depends_on = ["build"]
 cargo = ["cargo", "publish"]
+npm = "npm publish --provenance --access public"
