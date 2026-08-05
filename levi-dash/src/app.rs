@@ -4,10 +4,12 @@
 use leptos::prelude::*;
 use mullion::{
     ActivityDef, ActivityIcon, ActivityId, ActivityNode, Category, CategoryId, MullionContext,
-    MullionPaneTree, MullionProvider, MullionTheme, PaneEvent, PaneId, PaneNode, SplitDirection,
-    Workspace, WorkspaceId, WorkspaceManager, WorkspaceSwitcher,
+    MullionPaneTree, MullionProvider, PaneEvent, PaneId, PaneNode, SplitDirection, Workspace,
+    WorkspaceId, WorkspaceManager, WorkspaceSwitcher,
 };
-use pulse_leptos_ui::{BaseStyle, Styleable, tokens, use_style};
+use pulse_leptos_ui::{
+    BaseStyle, PULSE_MULLION_CLASS, PulseMullionStyle, Styleable, tokens, use_style,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::pages;
@@ -163,19 +165,6 @@ fn persist_workspaces(manager: &WorkspaceManager<PaneState>) {
 pub fn App() -> impl IntoView {
     connect();
 
-    // Align mullion's palette with pulse's design tokens so panes and
-    // content read as one system.
-    provide_context(MullionTheme {
-        bg: tokens::BASE_100.into(),
-        surface: tokens::BASE_100.into(),
-        border: tokens::BORDER.into(),
-        accent: tokens::BASE_200.into(),
-        highlight: tokens::BASE_300.into(),
-        text: tokens::TEXT_PRIMARY.into(),
-        text_muted: tokens::TEXT_TERTIARY.into(),
-        ..Default::default()
-    });
-
     // Named workspaces: last-used set wins; sensible defaults on first
     // visit (with a migration for the pre-workspaces single layout).
     let stored = stored_workspaces().unwrap_or_else(|| StoredWorkspaces {
@@ -204,6 +193,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         <style>{base_css}</style>
+        <style>{PulseMullionStyle.css()}</style>
         // Layout-only utilities (no color/type opinions — those stay pulse's):
         // one-line truncation and a subtle hover for clickable rows.
         <style>
@@ -219,6 +209,7 @@ pub fn App() -> impl IntoView {
         <MullionProvider
             initial_tree=initial_tree
             items=items()
+            show_focus_indicator=true
             on_event=on_event
             app_icon=ActivityIcon::Svg(ICON_APP.into())
         >
@@ -241,7 +232,7 @@ fn Shell(manager: WorkspaceManager<PaneState>) -> impl IntoView {
         });
     }
     view! {
-        <div style="display:flex;flex-direction:column;height:100%;">
+        <div class=PULSE_MULLION_CLASS style="display:flex;flex-direction:column;height:100%;">
             <div style="flex:1;min-height:0;">
                 <MullionPaneTree ctx=ctx.clone() />
             </div>
