@@ -14,7 +14,7 @@ myko = "4.24.4"
 myko-server = "4.24.4"
 myko-leptos = "4.24.4"
 autosocket = "4.24.4"
-levi-core = { version = "0.7.0", path = "levi-core" }
+levi-core = { version = "0.8.0", path = "levi-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ciborium = "0.2"
