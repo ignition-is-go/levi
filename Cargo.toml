@@ -10,9 +10,9 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/ignition-is-go/levi"
 
 [workspace.dependencies]
-myko = "4.24.4"
-myko-server = "4.24.4"
-myko-leptos = "4.24.4"
+myko = "5.0.7"
+myko-server = "5.0.7"
+myko-leptos = "5.0.7"
 autosocket = "4.24.4"
 levi-core = { version = "0.8.0", path = "levi-core" }
 serde = { version = "1", features = ["derive"] }
