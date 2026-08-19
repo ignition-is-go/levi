@@ -59,6 +59,15 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           VERSION=$(cargo flux version)
+          # `cargo flux version` prints an empty string and exits 0 when no
+          # commit since the last release is release-worthy (docs/chore/etc.
+          # do not bump per Conventional Commits). Stamping "" hard-fails the
+          # workflow (2026-08-18: a chore(deps)-only merge), so bail out
+          # cleanly like myko's release workflow does.
+          if [ -z "$VERSION" ]; then
+            echo "nothing to release (no version bump from the new commits)"
+            exit 0
+          fi
           cargo flux stamp "$VERSION"
           cargo update --workspace
           cargo fmt --all
