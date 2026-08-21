@@ -33,6 +33,11 @@ pub enum Cmd {
         #[arg(long = "file")]
         files: Vec<std::path::PathBuf>,
     },
+    /// Administrative project operations.
+    Project {
+        #[command(subcommand)]
+        cmd: ProjectCmd,
+    },
     /// Add a task (use --project to file it in another project via the hub).
     Add {
         title: String,
@@ -179,5 +184,14 @@ pub enum DepCmd {
         blocked: String,
         #[arg(long = "on")]
         on: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ProjectCmd {
+    /// Rename the current project without changing its stable project id.
+    Rename {
+        /// New project name in the hub registry.
+        name: String,
     },
 }

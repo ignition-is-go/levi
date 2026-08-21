@@ -142,6 +142,30 @@ fn onboard_alias_still_works() {
 }
 
 #[test]
+fn project_rename_preserves_identity_and_updates_name() {
+    let repo = TestRepo::new();
+    let init = repo.levi_ok(&["init", "--name", "old-name"]);
+    let id = init
+        .split('(')
+        .nth(1)
+        .and_then(|s| s.split(')').next())
+        .expect("project id in init output")
+        .to_owned();
+
+    let renamed = repo.levi_ok(&["project", "rename", "pulse-pixelstream"]);
+    assert!(renamed.contains(&id), "got: {renamed}");
+    assert!(renamed.contains("old-name"), "got: {renamed}");
+    assert!(renamed.contains("pulse-pixelstream"), "got: {renamed}");
+
+    let init_again = repo.levi_ok(&["init"]);
+    assert!(
+        init_again.contains("pulse-pixelstream"),
+        "got: {init_again}"
+    );
+    assert!(init_again.contains(&id), "got: {init_again}");
+}
+
+#[test]
 fn dep_comment_edit_flow() {
     let repo = TestRepo::new();
     repo.init();

@@ -16,6 +16,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     let mut ctx = LeviCtx::load(cli.no_sync)?;
     match cli.cmd {
         Cmd::Init { name, hub, files } => commands::init::run(&mut ctx, name, hub, files),
+        Cmd::Project { cmd } => match cmd {
+            levi::cli::ProjectCmd::Rename { name } => commands::project::rename(&ctx, &name),
+        },
         Cmd::Add {
             title,
             project,
