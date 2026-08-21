@@ -7,6 +7,7 @@ pub mod foreign_ls;
 pub mod init;
 pub mod ls;
 pub mod next;
+pub mod project;
 pub mod show;
 pub mod status;
 pub mod sync_cmd;
