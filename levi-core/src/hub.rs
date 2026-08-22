@@ -19,7 +19,7 @@ use myko::saga::{SagaContext, SagaHandler};
 use myko::wire::MEventType;
 
 use crate::entities::{
-    Applied, GetAppliedsByIds, GetLogEntrysByQuery, LogEntry, PartialLogEntry, applied_id,
+    Applied, GetAppliedsByIds, GetLogEntrysByQuery, LogEntry, LogEntryQuery, applied_id,
 };
 
 /// Apply the event wrapped inside a LogEntry to this node's stores, unless a
@@ -47,7 +47,7 @@ impl CommandHandler for ApplyLogEntry {
         let event: myko::wire::MEvent = ciborium::from_reader(bytes.as_slice())
             .map_err(|e| err(format!("invalid CBOR in LogEntry: {e}")))?;
         // Never let a wrapped LogEntry apply another LogEntry: no recursion.
-        if event.item_type == LogEntry::ENTITY_NAME_STATIC {
+        if event.item_type.as_ref() == LogEntry::ENTITY_NAME_STATIC {
             return Err(err("refusing to unwrap a nested LogEntry".into()));
         }
         let Some(item_id) = event.item.get("id").and_then(|v| v.as_str()) else {
@@ -55,14 +55,14 @@ impl CommandHandler for ApplyLogEntry {
         };
 
         // LWW guard: skip events older than what this entity already shows.
-        let guard_id = applied_id(&event.item_type, item_id);
+        let guard_id = applied_id(event.item_type.as_ref(), item_id);
         let existing = ctx.exec_query_first(GetAppliedsByIds {
             ids: vec![guard_id.clone().into()],
         })?;
         let incoming = (event.created_at.clone(), self.event_oid.clone());
         if let Some(applied) = existing
             && (applied.event_created.as_str(), applied.event_oid.as_str())
-                > (incoming.0.as_str(), incoming.1.as_str())
+                > (incoming.0.as_ref(), incoming.1.as_str())
         {
             return Ok(()); // stale: a newer event was already applied
         }
@@ -70,7 +70,7 @@ impl CommandHandler for ApplyLogEntry {
         ctx.emit_event_batch(vec![event])?;
         ctx.emit_set(&Applied {
             id: guard_id.into(),
-            event_created: incoming.0,
+            event_created: incoming.0.to_string(),
             event_oid: incoming.1,
         })?;
         Ok(())
@@ -121,9 +121,9 @@ impl myko::report::ReportHandler for LogEntryBuckets {
     fn compute(
         &self,
         ctx: myko::report::ReportContext,
-    ) -> impl myko::hyphae::MaterializeDefinite<Arc<Self::Output>> {
-        ctx.query_map(GetLogEntrysByQuery(PartialLogEntry {
-            project_id: Some(self.project_id.clone()),
+    ) -> impl myko::hyphae::Materialize<Arc<Self::Output>, myko::hyphae::Definite> {
+        ctx.query_map(GetLogEntrysByQuery(LogEntryQuery {
+            project_id: Some(self.project_id.clone().into()),
             ..Default::default()
         }))
         .items()
@@ -154,10 +154,10 @@ impl myko::report::ReportHandler for LogEntryBucketIds {
     fn compute(
         &self,
         ctx: myko::report::ReportContext,
-    ) -> impl myko::hyphae::MaterializeDefinite<Arc<Self::Output>> {
+    ) -> impl myko::hyphae::Materialize<Arc<Self::Output>, myko::hyphae::Definite> {
         let bucket = self.bucket.clone();
-        ctx.query_map(GetLogEntrysByQuery(PartialLogEntry {
-            project_id: Some(self.project_id.clone()),
+        ctx.query_map(GetLogEntrysByQuery(LogEntryQuery {
+            project_id: Some(self.project_id.clone().into()),
             ..Default::default()
         }))
         .items()

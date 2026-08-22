@@ -1,4 +1,4 @@
-//! levi-hub: a myko CellServer + optional Postgres, no git anywhere
+//! levi-hub: a Myko server + optional Postgres, no git anywhere
 //! (spec §Hub). Receives task events + graph facts from CLIs and serves
 //! aggregate reactive queries. The dashboard is a standalone Leptos CSR app
 //! (levi-dash) that connects to the same `/myko` endpoint.
@@ -40,7 +40,7 @@ async fn serve(bind: String) -> Result<(), Box<dyn std::error::Error + Send + Sy
          write all task data. Bind a private interface or front with an \
          authenticating proxy."
     );
-    let mut builder = myko_server::CellServer::builder().with_bind_addr(bind.parse()?);
+    let mut builder = myko_server::MykoServer::builder().with_bind_addr(bind.parse()?);
     match myko_server::postgres::PostgresConfig::from_env() {
         Some(pg) => builder = builder.with_postgres(pg),
         None => tracing::warn!("MYKO_POSTGRES_URL not set: events are held in memory only"),

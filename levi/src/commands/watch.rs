@@ -35,8 +35,8 @@ pub fn run(ctx: &LeviCtx, json: bool) -> Result<()> {
         .map(|e| e.id.to_string())
         .collect();
 
-    let filter = levi_core::PartialLogEntry {
-        project_id: Some(project_id.clone()),
+    let filter = levi_core::LogEntryQuery {
+        project_id: Some(project_id.clone().into()),
         ..Default::default()
     };
     let cell = session

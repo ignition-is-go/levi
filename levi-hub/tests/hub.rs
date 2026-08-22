@@ -92,7 +92,7 @@ async fn log_entry_saga_unwraps_into_queryable_task() {
         created: "2026-07-18T00:00:00.000000Z".into(),
     };
     let mut inner = MEvent::from_item(&task, MEventType::SET, "m");
-    inner.created_at = task.created.clone();
+    inner.created_at = task.created.clone().into();
     let mut cbor = Vec::new();
     ciborium::into_writer(&inner, &mut cbor).unwrap();
     let entry = LogEntry::wrap(
@@ -150,7 +150,7 @@ async fn out_of_order_events_do_not_clobber_newer_state() {
             created: "2026-07-01T00:00:00.000000Z".into(),
         };
         let mut inner = MEvent::from_item(&task, MEventType::SET, "m");
-        inner.created_at = created.to_string();
+        inner.created_at = created.into();
         let mut cbor = Vec::new();
         ciborium::into_writer(&inner, &mut cbor).unwrap();
         LogEntry::wrap(oid, "projO", &cbor, created)

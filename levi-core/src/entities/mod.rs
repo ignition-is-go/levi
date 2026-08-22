@@ -44,7 +44,7 @@ mod tests {
         let back: MEvent = ciborium::from_reader(buf.as_slice()).unwrap();
         let t2: Task = serde_json::from_value(back.item.clone()).unwrap();
         assert_eq!(t, t2);
-        assert_eq!(back.item_type, "Task");
+        assert_eq!(back.item_type.as_ref(), "Task");
     }
 
     #[test]
