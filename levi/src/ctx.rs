@@ -87,13 +87,13 @@ impl LeviCtx {
     /// canonical timestamp format.
     pub fn set_event<T: Eventable>(&self, item: &T) -> MEvent {
         let mut ev = MEvent::from_item(item, MEventType::SET, &self.identity.machine);
-        ev.created_at = Self::now();
+        ev.created_at = Self::now().into();
         ev
     }
 
     pub fn del_event<T: Eventable>(&self, item: &T) -> MEvent {
         let mut ev = MEvent::from_item(item, MEventType::DEL, &self.identity.machine);
-        ev.created_at = Self::now();
+        ev.created_at = Self::now().into();
         ev
     }
 

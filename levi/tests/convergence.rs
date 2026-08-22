@@ -27,7 +27,7 @@ fn start_hub() -> u16 {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             levi_core::link();
-            let server = myko_server::CellServer::builder()
+            let server = myko_server::MykoServer::builder()
                 .with_bind_addr(([127, 0, 0, 1], port).into())
                 .build();
             if let Err(e) = server.run().await {

@@ -59,8 +59,8 @@ impl World {
 
 pub fn materialize(mut records: Vec<EventRecord>) -> World {
     records.sort_by(|a, b| {
-        (a.event.created_at.as_str(), a.id.as_str())
-            .cmp(&(b.event.created_at.as_str(), b.id.as_str()))
+        (a.event.created_at.as_ref(), a.id.as_str())
+            .cmp(&(b.event.created_at.as_ref(), b.id.as_str()))
     });
 
     let mut w = World::default();
@@ -69,7 +69,7 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
 
     for r in &records {
         let ev = &r.event;
-        let t = ev.item_type.as_str();
+        let t = ev.item_type.as_ref();
         if t == Project::ENTITY_NAME_STATIC {
             if matches!(ev.change_type, MEventType::SET)
                 && let Ok(p) = serde_json::from_value::<Project>(ev.item.clone())
@@ -130,7 +130,7 @@ mod tests {
 
     fn rec<T: myko::prelude::Eventable>(oid: &str, item: &T, created_at: &str) -> EventRecord {
         let mut event = MEvent::from_item(item, MEventType::SET, "m");
-        event.created_at = created_at.to_string();
+        event.created_at = created_at.into();
         EventRecord {
             id: oid.to_string(),
             event,
@@ -139,7 +139,7 @@ mod tests {
 
     fn del<T: myko::prelude::Eventable>(oid: &str, item: &T, created_at: &str) -> EventRecord {
         let mut event = MEvent::from_item(item, MEventType::DEL, "m");
-        event.created_at = created_at.to_string();
+        event.created_at = created_at.into();
         EventRecord {
             id: oid.to_string(),
             event,

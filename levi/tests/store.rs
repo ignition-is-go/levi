@@ -70,7 +70,7 @@ fn append_and_read_roundtrip() {
         .unwrap();
     assert!(cat.status.success());
     let event: MEvent = ciborium::from_reader(cat.stdout.as_slice()).unwrap();
-    assert_eq!(event.item_type, "Task");
+    assert_eq!(event.item_type.as_ref(), "Task");
 
     // Second append parents the first commit.
     store.append(&[task_event(4), task_event(5)]).unwrap();

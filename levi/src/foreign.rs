@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 use levi_core::materialize::materialize;
 use levi_core::resolve::{Resolution, Status, effective_status};
-use levi_core::{Task, foreign_key};
+use levi_core::{Task, TaskId, foreign_key};
 
 use crate::ancestors::GixAncestors;
 use crate::ctx::LeviCtx;
@@ -96,8 +96,8 @@ pub fn resolve_foreign_task(
     prefix: &str,
 ) -> Result<Arc<Task>> {
     let timeout = Duration::from_secs(10);
-    let filter = levi_core::PartialTask {
-        project_id: Some(project_id.to_string()),
+    let filter = levi_core::TaskQuery {
+        project_id: Some(project_id.to_string().into()),
         ..Default::default()
     };
     let count: levi_core::TaskCount =
@@ -232,8 +232,8 @@ pub fn refresh_cache(
         }
 
         // Foreign status changes for the blocker.
-        let sc_filter = levi_core::PartialStatusChange {
-            task_id: Some(dep.blocker_task_id.clone()),
+        let sc_filter = levi_core::StatusChangeQuery {
+            task_id: Some(dep.blocker_task_id.clone().into()),
             ..Default::default()
         };
         let sc_count: levi_core::StatusChangeCount =
@@ -245,8 +245,8 @@ pub fn refresh_cache(
         )?;
 
         // Foreign fact graph + branch heads.
-        let cf_filter = levi_core::PartialCommitFact {
-            project_id: Some(project_id.clone()),
+        let cf_filter = levi_core::CommitFactQuery {
+            project_id: Some(project_id.clone().into()),
             ..Default::default()
         };
         let cf_count: levi_core::CommitFactCount =
@@ -256,8 +256,8 @@ pub fn refresh_cache(
             cf_count.count,
             timeout,
         )?;
-        let rf_filter = levi_core::PartialRefFact {
-            project_id: Some(project_id.clone()),
+        let rf_filter = levi_core::RefFactQuery {
+            project_id: Some(project_id.clone().into()),
             ..Default::default()
         };
         let rf_count: levi_core::RefFactCount =
@@ -300,8 +300,8 @@ pub fn refresh_cache(
         };
 
         // Title (best effort).
-        let title_filter = levi_core::PartialTask {
-            id: Some(dep.blocker_task_id.clone().into()),
+        let title_filter = levi_core::TaskQuery {
+            id: Some(TaskId(Arc::from(dep.blocker_task_id.as_str())).into()),
             ..Default::default()
         };
         let title = session

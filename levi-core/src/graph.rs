@@ -224,14 +224,21 @@ impl myko::report::ReportHandler for IssueGraphReport {
     fn compute(
         &self,
         ctx: myko::report::ReportContext,
-    ) -> impl myko::hyphae::MaterializeDefinite<std::sync::Arc<Self::Output>> {
+    ) -> impl myko::hyphae::Materialize<std::sync::Arc<Self::Output>, myko::hyphae::Definite> {
         use myko::hyphae::JoinExt;
-        let tasks = ctx.query_map(crate::GetAllTasks {}).items();
-        let deps = ctx.query_map(crate::GetAllDependencys {}).items();
-        let changes = ctx.query_map(crate::GetAllStatusChanges {}).items();
+        let tasks = ctx.query_map(crate::GetAllTasks {}).items().materialize();
+        let deps = ctx
+            .query_map(crate::GetAllDependencys {})
+            .items()
+            .materialize();
+        let changes = ctx
+            .query_map(crate::GetAllStatusChanges {})
+            .items()
+            .materialize();
         tasks
-            .join(&deps)
-            .join(&changes)
+            .join(deps)
+            .materialize()
+            .join(changes)
             .map(|((tasks, deps), changes)| {
                 std::sync::Arc::new(IssueGraphOut {
                     graph: build_from_live(tasks, deps, changes),
