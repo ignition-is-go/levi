@@ -55,6 +55,38 @@ CI must fetch the custom event ref first, for example
 `git fetch origin +refs/levi/events:refs/levi/events` (or run `levi sync`).
 Ref identity is exact: renaming a branch does not transfer its old obligations.
 
+## GitHub Action
+
+Levi publishes a colocated composite action backed by checksum-verified native
+release binaries for Linux x86-64, Windows x86-64, and macOS x86-64 or ARM64.
+It fetches `refs/levi/events` and runs the branch claim gate directly:
+
+```yaml
+permissions:
+  contents: read
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+
+  - id: levi
+    uses: ignition-is-go/levi@v0.9.0
+    with:
+      git-ref: ${{ github.head_ref || github.ref_name }}
+```
+
+`git-ref` selects the branch that owns the claims. `at` selects the tested Git
+history and defaults to `HEAD`, so pull-request merge commits and detached CI
+checkouts work correctly. `remote` defaults to `origin`; set `fetch-events` to
+`false` only when `refs/levi/events` is already present locally.
+
+The action exposes `version`, `path`, and the compact `levi.check-claims/1`
+JSON `result`. Set `check: false` for setup-only use; the installed `levi`
+binary is added to `PATH`. `version` defaults to the CLI version carried by the
+selected action release. Release archives and their SHA-256 sidecars are built
+and smoke-tested on every supported runner before publication completes.
+
 ## Sync
 
 ```sh
