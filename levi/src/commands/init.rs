@@ -41,6 +41,8 @@ it when parsing.\n\
   anchors at HEAD, so it only applies where the fixing commit exists\n\
   (feature-branch closes stay open on main until merged; that is correct).\n\
   `--no-anchor` is only for tasks unrelated to code state.\n\
+- **CI**: `levi check-claims --git-ref <branch>` fails unless every task\n\
+  claimed by that branch is closed in the tested HEAD ancestry.\n\
 - **Reopen** regressions with `levi reopen <id>`; leave context with\n\
   `levi comment <id> \"text\"`.\n\
 - Sync is opportunistic after every mutation; `levi sync` forces a full\n\

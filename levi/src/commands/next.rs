@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use levi_core::Claim;
 use levi_core::ids::short_id;
 use levi_core::materialize::materialize;
 use levi_core::rank::{RankedTask, rank_next};
@@ -43,17 +42,8 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
         let task_id = top.task_id.clone();
         let me = ctx.identity.clone();
         let now = Utc::now();
-        let claim_item = Claim {
-            id: task_id.clone().into(),
-            project_id: project_id.clone(),
-            task_id: task_id.clone(),
-            dev: me.dev.clone(),
-            machine: me.machine.clone(),
-            machine_id: me.machine_id.clone(),
-            worktree: me.worktree.clone(),
-            created: LeviCtx::now(),
-            ttl_secs: ctx.config.claim_ttl_secs,
-        };
+        let claim_item =
+            crate::commands::claim_ops::build_claim(ctx, &task_id, project_id.clone())?;
         let event = ctx.set_event(&claim_item);
         let appended = ctx.store.append_if(&[event], |records| {
             // Full eligibility recheck inside the critical section: another

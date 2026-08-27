@@ -31,6 +31,9 @@ pub struct World {
     pub deps: BTreeMap<String, Dependency>,
     /// Keyed by task_id (== Claim entity id); SET overwrite = newest wins.
     pub claims: BTreeMap<String, Claim>,
+    /// Every historical claim SET, including claims later overwritten or
+    /// dropped. Used to enforce branch-owned work in CI.
+    pub claim_history: Vec<Claim>,
     /// Sorted by (at, id).
     pub comments: Vec<Comment>,
     pub commit_facts: BTreeMap<String, CommitFact>,
@@ -83,6 +86,11 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
         } else if t == Dependency::ENTITY_NAME_STATIC {
             apply(&mut w.deps, ev);
         } else if t == Claim::ENTITY_NAME_STATIC {
+            if matches!(ev.change_type, MEventType::SET)
+                && let Ok(claim) = serde_json::from_value::<Claim>(ev.item.clone())
+            {
+                w.claim_history.push(claim);
+            }
             apply(&mut w.claims, ev);
         } else if t == Comment::ENTITY_NAME_STATIC {
             apply(&mut comments, ev);
@@ -208,6 +216,7 @@ mod tests {
             machine: "m".into(),
             worktree: "/w".into(),
             machine_id: String::new(),
+            git_ref: "refs/heads/test".into(),
             created: "2026-07-01T00:00:00Z".into(),
             ttl_secs: 3600,
         };
@@ -216,6 +225,31 @@ mod tests {
         let dead = "2026-07-01T02:00:00Z".parse::<DateTime<Utc>>().unwrap();
         assert!(w.live_claim("t1", live).is_some());
         assert!(w.live_claim("t1", dead).is_none());
+    }
+
+    #[test]
+    fn legacy_claim_without_git_ref_still_materializes() {
+        let claim = Claim {
+            id: "t1".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            dev: "d".into(),
+            machine: "m".into(),
+            machine_id: String::new(),
+            worktree: "/w".into(),
+            git_ref: "refs/heads/feature".into(),
+            created: "2026-07-01T00:00:00Z".into(),
+            ttl_secs: 3600,
+        };
+        let mut event = MEvent::from_item(&claim, MEventType::SET, "m");
+        event.item.as_object_mut().unwrap().remove("gitRef");
+        event.created_at = "2026-07-01T00:00:00Z".into();
+        let world = materialize(vec![EventRecord {
+            id: "aa".into(),
+            event,
+        }]);
+        assert_eq!(world.claims["t1"].git_ref, "");
+        assert_eq!(world.claim_history[0].git_ref, "");
     }
 
     #[test]
