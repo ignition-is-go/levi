@@ -103,6 +103,18 @@ pub enum Cmd {
     Steal { id: String },
     /// Release your claim on a task.
     Drop { id: String },
+    /// Fail unless every task ever claimed by a branch is closed at HEAD.
+    /// Intended for CI; short branch names are normalized to refs/heads/<name>.
+    CheckClaims {
+        /// Branch whose historical claims to check. Defaults to the current branch.
+        #[arg(long = "git-ref")]
+        git_ref: Option<String>,
+        /// Git revision whose task status to test. Defaults to HEAD.
+        #[arg(long)]
+        at: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Close a task, anchored at HEAD by default.
     Close {
         id: String,

@@ -280,6 +280,7 @@ mod tests {
                 machine: machine.into(),
                 worktree: worktree.into(),
                 machine_id: String::new(),
+                git_ref: "refs/heads/test".into(),
                 created: at.into(),
                 ttl_secs: 86400,
             },
@@ -459,6 +460,7 @@ mod tests {
             machine: machine.into(),
             machine_id: machine_id.into(),
             worktree: "/w1".into(),
+            git_ref: "refs/heads/test".into(),
             created: "2026-07-01T00:00:00Z".into(),
             ttl_secs: 86400,
         };

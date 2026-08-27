@@ -14,11 +14,13 @@ pub const SCHEMA_SHOW: &str = "levi.show/1";
 pub const SCHEMA_NEXT: &str = "levi.next/1";
 pub const SCHEMA_ADD: &str = "levi.add/1";
 pub const SCHEMA_WATCH: &str = "levi.watch/1";
+pub const SCHEMA_CHECK_CLAIMS: &str = "levi.check-claims/1";
 
 pub fn claim_json(world: &World, task_id: &str, now: DateTime<Utc>) -> Value {
     match world.live_claim(task_id, now) {
         Some(c) => json!({
             "dev": c.dev, "machine": c.machine, "worktree": c.worktree,
+            "git_ref": if c.git_ref.is_empty() { Value::Null } else { json!(c.git_ref) },
             "at": c.created, "ttl_secs": c.ttl_secs,
         }),
         None => Value::Null,

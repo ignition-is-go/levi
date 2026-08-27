@@ -32,6 +32,7 @@ levi close lv-3f2a                   # anchored at HEAD: closed only where
                                      # this commit is in ancestry
 levi ls --json                       # stable schemas on every read command
 levi show lv-3f2a                    # detail: deps, claim, comments, history
+levi check-claims --git-ref feature  # CI: fail if its claimed tasks are open at HEAD
 ```
 
 Anchoring: `levi close ID` anchors at HEAD; `--anchor SHA` overrides;
@@ -39,9 +40,52 @@ Anchoring: `levi close ID` anchors at HEAD; `--anchor SHA` overrides;
 works identically. Rebased-away anchors are detected and warned about.
 
 Claims are advisory, keyed to (developer, machine, worktree), newest wins,
-expire after 24h (`[claim] ttl_secs` in config).
-`levi start`/`steal`/`drop` manage them; parallel `levi next --claim` on one
-machine never hands two agents the same task.
+and expire after 24h (`[claim] ttl_secs` in config). New claims also record
+the current full branch ref and therefore require a symbolic (non-detached)
+HEAD. `levi start`/`steal`/`drop` manage live coordination; parallel
+`levi next --claim` on one machine never hands two agents the same task.
+
+Branch responsibility is durable even after a claim is dropped, expires, is
+stolen, or is automatically released by `levi close`. In CI, run
+`levi check-claims --git-ref "$BRANCH"`; it exits non-zero unless every task
+ever claimed by that branch is closed in the tested HEAD ancestry. Use
+`--at REV` to test another revision and `--json` for the versioned
+`levi.check-claims/1` result. Short branch names normalize to `refs/heads/…`.
+CI must fetch the custom event ref first, for example
+`git fetch origin +refs/levi/events:refs/levi/events` (or run `levi sync`).
+Ref identity is exact: renaming a branch does not transfer its old obligations.
+
+## GitHub Action
+
+Levi publishes a colocated composite action backed by checksum-verified native
+release binaries for Linux x86-64, Windows x86-64, and macOS x86-64 or ARM64.
+It fetches `refs/levi/events` and runs the branch claim gate directly:
+
+```yaml
+permissions:
+  contents: read
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+
+  - id: levi
+    uses: ignition-is-go/levi@v0.9.0
+    with:
+      git-ref: ${{ github.head_ref || github.ref_name }}
+```
+
+`git-ref` selects the branch that owns the claims. `at` selects the tested Git
+history and defaults to `HEAD`, so pull-request merge commits and detached CI
+checkouts work correctly. `remote` defaults to `origin`; set `fetch-events` to
+`false` only when `refs/levi/events` is already present locally.
+
+The action exposes `version`, `path`, and the compact `levi.check-claims/1`
+JSON `result`. Set `check: false` for setup-only use; the installed `levi`
+binary is added to `PATH`. `version` defaults to the CLI version carried by the
+selected action release. Release archives and their SHA-256 sidecars are built
+and smoke-tested on every supported runner before publication completes.
 
 ## Sync
 

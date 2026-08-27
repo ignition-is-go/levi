@@ -1,0 +1,273 @@
+name: Levi Claim Gate
+description: Install a verified Levi binary and ensure branch-claimed issues are closed
+author: Lucid
+
+inputs:
+  version:
+    description: Levi version to install, or "action" for the version in this action release
+    required: false
+    default: action
+  git-ref:
+    description: Branch whose historical claims to check; defaults to the pull-request head or current ref
+    required: false
+    default: ""
+  at:
+    description: Git revision whose task status to test
+    required: false
+    default: HEAD
+  root:
+    description: Repository directory in which to fetch events and run Levi
+    required: false
+    default: .
+  fetch-events:
+    description: Fetch refs/levi/events from the configured remote before checking
+    required: false
+    default: "true"
+  remote:
+    description: Git remote used when fetching refs/levi/events
+    required: false
+    default: origin
+  check:
+    description: Run check-claims after installation; set false for setup-only use
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: Installed Levi version
+    value: ${{ steps.install-unix.outputs.version || steps.install-windows.outputs.version }}
+  path:
+    description: Absolute path to the installed Levi executable
+    value: ${{ steps.install-unix.outputs.path || steps.install-windows.outputs.path }}
+  result:
+    description: The levi.check-claims/1 JSON result; empty in setup-only mode
+    value: ${{ steps.check-unix.outputs.result || steps.check-windows.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate options
+      shell: bash
+      env:
+        CHECK: ${{ inputs.check }}
+        FETCH_EVENTS: ${{ inputs.fetch-events }}
+      run: |
+        case "$CHECK" in true|false) ;; *) echo "check must be true or false" >&2; exit 1 ;; esac
+        case "$FETCH_EVENTS" in true|false) ;; *) echo "fetch-events must be true or false" >&2; exit 1 ;; esac
+
+    - name: Install Levi
+      id: install-unix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+
+        version="$REQUESTED_VERSION"
+        if [[ -z "$version" || "$version" == "action" ]]; then
+          version="$(awk '
+            /^\[package\]$/ { in_package=1; next }
+            /^\[/ && in_package { exit }
+            in_package && /^version[[:space:]]*=/ {
+              value=$0
+              sub(/^[^=]*=[[:space:]]*"/, "", value)
+              sub(/".*/, "", value)
+              print value
+              exit
+            }
+          ' "$ACTION_PATH/levi/Cargo.toml")"
+        fi
+        version="${version#v}"
+        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "Invalid Levi version: $version" >&2
+          exit 1
+        fi
+
+        case "${RUNNER_OS}:${RUNNER_ARCH}" in
+          Linux:X64) target=x86_64-unknown-linux-gnu ;;
+          macOS:X64) target=x86_64-apple-darwin ;;
+          macOS:ARM64) target=aarch64-apple-darwin ;;
+          *)
+            echo "Levi does not publish a binary for ${RUNNER_OS}/${RUNNER_ARCH}" >&2
+            exit 1
+            ;;
+        esac
+
+        archive="levi-${version}-${target}.tgz"
+        cache_dir="${RUNNER_TOOL_CACHE}/levi/${version}/${target}"
+        cached_archive="${cache_dir}/${archive}"
+        base="https://github.com/ignition-is-go/levi/releases/download/v${version}"
+        mkdir -p "$cache_dir"
+
+        checksum_file="$(mktemp "${RUNNER_TEMP}/levi-checksum.XXXXXX")"
+        curl -fsSL "$base/$archive.sha256" -o "$checksum_file"
+        expected="$(awk '{ print tolower($1) }' "$checksum_file")"
+        if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "Invalid SHA-256 file for $archive" >&2
+          exit 1
+        fi
+
+        hash_archive() {
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$1" | awk '{ print tolower($1) }'
+          else
+            shasum -a 256 "$1" | awk '{ print tolower($1) }'
+          fi
+        }
+
+        if [[ ! -f "$cached_archive" ]] || [[ "$(hash_archive "$cached_archive")" != "$expected" ]]; then
+          pending="$(mktemp "${RUNNER_TEMP}/levi-archive.XXXXXX")"
+          curl -fsSL "$base/$archive" -o "$pending"
+          actual="$(hash_archive "$pending")"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Checksum mismatch for $archive" >&2
+            exit 1
+          fi
+          mv -f "$pending" "$cached_archive"
+        fi
+
+        install_dir="$(mktemp -d "${RUNNER_TEMP}/levi-${version}-${target}.XXXXXX")"
+        tar -xzf "$cached_archive" -C "$install_dir"
+        binary="${install_dir}/levi"
+        if [[ ! -f "$binary" ]]; then
+          echo "Release archive did not contain levi" >&2
+          exit 1
+        fi
+        chmod +x "$binary"
+
+        echo "$install_dir" >> "$GITHUB_PATH"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "path=$binary" >> "$GITHUB_OUTPUT"
+
+    - name: Install Levi
+      id: install-windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        $version = $env:REQUESTED_VERSION
+        if ([string]::IsNullOrWhiteSpace($version) -or $version -eq 'action') {
+          $inPackage = $false
+          foreach ($line in Get-Content (Join-Path $env:ACTION_PATH 'levi/Cargo.toml')) {
+            if ($line -match '^\[package\]$') {
+              $inPackage = $true
+              continue
+            }
+            if ($inPackage -and $line -match '^\[') { break }
+            if ($inPackage -and $line -match '^version\s*=\s*"([^"]+)"') {
+              $version = $Matches[1]
+              break
+            }
+          }
+        }
+        $version = $version -replace '^v', ''
+        if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
+          throw "Invalid Levi version: $version"
+        }
+        if ($env:RUNNER_ARCH -ne 'X64') {
+          throw "Levi does not publish a binary for Windows/$env:RUNNER_ARCH"
+        }
+
+        $target = 'x86_64-pc-windows-msvc'
+        $archive = "levi-$version-$target.tgz"
+        $cacheDir = Join-Path $env:RUNNER_TOOL_CACHE "levi/$version/$target"
+        $cachedArchive = Join-Path $cacheDir $archive
+        $base = "https://github.com/ignition-is-go/levi/releases/download/v$version"
+        New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
+        $checksumPath = Join-Path $env:RUNNER_TEMP "levi-checksum-$([guid]::NewGuid()).txt"
+        Invoke-WebRequest -Uri "$base/$archive.sha256" -OutFile $checksumPath
+        $expected = ((Get-Content $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+        if ($expected -notmatch '^[0-9a-f]{64}$') {
+          throw "Invalid SHA-256 file for $archive"
+        }
+
+        $cacheValid = (Test-Path $cachedArchive -PathType Leaf) -and ((Get-FileHash -Algorithm SHA256 $cachedArchive).Hash.ToLowerInvariant() -eq $expected)
+        if (-not $cacheValid) {
+          $pending = Join-Path $env:RUNNER_TEMP "levi-archive-$([guid]::NewGuid()).tgz"
+          Invoke-WebRequest -Uri "$base/$archive" -OutFile $pending
+          $actual = (Get-FileHash -Algorithm SHA256 $pending).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Checksum mismatch for $archive"
+          }
+          Move-Item -Force $pending $cachedArchive
+        }
+
+        $installDir = Join-Path $env:RUNNER_TEMP "levi-$version-$target-$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+        tar -xzf $cachedArchive -C $installDir
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $binary = Join-Path $installDir 'levi.exe'
+        if (-not (Test-Path $binary -PathType Leaf)) {
+          throw 'Release archive did not contain levi.exe'
+        }
+
+        $installDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "path=$binary" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+    - name: Fetch Levi events
+      if: inputs.check == 'true' && inputs.fetch-events == 'true'
+      shell: bash
+      working-directory: ${{ inputs.root }}
+      env:
+        REMOTE: ${{ inputs.remote }}
+      run: git fetch --no-tags "$REMOTE" '+refs/levi/events:refs/levi/events'
+
+    - name: Check branch claims
+      id: check-unix
+      if: inputs.check == 'true' && runner.os != 'Windows'
+      shell: bash
+      working-directory: ${{ inputs.root }}
+      env:
+        LEVI: ${{ steps.install-unix.outputs.path }}
+        INPUT_GIT_REF: ${{ inputs.git-ref }}
+        DEFAULT_GIT_REF: ${{ github.head_ref || github.ref_name }}
+        AT: ${{ inputs.at }}
+      run: |
+        set -euo pipefail
+        git_ref="${INPUT_GIT_REF:-$DEFAULT_GIT_REF}"
+        if [[ -z "$git_ref" ]]; then
+          echo "No branch ref was supplied or available from the GitHub event" >&2
+          exit 1
+        fi
+        set +e
+        result="$("$LEVI" check-claims --git-ref "$git_ref" --at "$AT" --json)"
+        status=$?
+        set -e
+        echo "$result"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        exit "$status"
+
+    - name: Check branch claims
+      id: check-windows
+      if: inputs.check == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      working-directory: ${{ inputs.root }}
+      env:
+        LEVI: ${{ steps.install-windows.outputs.path }}
+        INPUT_GIT_REF: ${{ inputs.git-ref }}
+        DEFAULT_GIT_REF: ${{ github.head_ref || github.ref_name }}
+        AT: ${{ inputs.at }}
+      run: |
+        $gitRef = $env:INPUT_GIT_REF
+        if ([string]::IsNullOrWhiteSpace($gitRef)) { $gitRef = $env:DEFAULT_GIT_REF }
+        if ([string]::IsNullOrWhiteSpace($gitRef)) {
+          throw 'No branch ref was supplied or available from the GitHub event'
+        }
+        $output = & $env:LEVI check-claims --git-ref $gitRef --at $env:AT --json
+        $status = $LASTEXITCODE
+        $result = ($output | Out-String).Trim()
+        Write-Output $result
+        "result=$result" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        exit $status
+
+branding:
+  icon: check-circle
+  color: green

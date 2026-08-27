@@ -14,6 +14,10 @@ pub struct Claim {
     #[serde(default)]
     pub machine_id: String,
     pub worktree: String,
+    /// Full symbolic Git ref that owned this claim (for example
+    /// `refs/heads/feature/close-claims`). Empty only on legacy events.
+    #[serde(default)]
+    pub git_ref: String,
     /// RFC3339
     pub created: String,
     pub ttl_secs: u64,

@@ -135,6 +135,24 @@ impl LeviCtx {
         Ok(id.object()?.peel_to_kind(gix::object::Kind::Commit)?.id)
     }
 
+    /// The full symbolic Git ref currently checked out.
+    ///
+    /// Claims are branch-owned, so detached HEAD is not a valid claiming
+    /// context (including CI checkouts unless they create/check out a branch).
+    pub fn current_git_ref(&self) -> Result<String> {
+        let name = self
+            .store
+            .repo()
+            .head_name()
+            .context("cannot read HEAD")?
+            .context("cannot claim from detached HEAD; check out a branch first")?;
+        let name = name.as_bstr().to_string();
+        if !name.starts_with("refs/heads/") {
+            bail!("cannot claim from non-branch Git ref '{name}'; check out a branch first");
+        }
+        Ok(name)
+    }
+
     /// This checkout's HEAD commit, if born.
     pub fn head_commit(&self) -> Option<ObjectId> {
         self.store.repo().head_id().ok().map(|id| id.detach())
