@@ -5,7 +5,7 @@
 mod common;
 
 use common::TestRepo;
-use common::start_hub;
+use common::start_hub_exclusive;
 
 /// Extend the repo's history by `n` empty commits without touching the
 /// index: a commit-tree chain and one ref update (fast enough for hundreds
@@ -48,7 +48,8 @@ fn published_facts(repo: &TestRepo) -> usize {
 /// forever — 95 events per `levi add` on a 95-branch repo.
 #[test]
 fn unchanged_branch_heads_are_not_republished() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let repo = TestRepo::new();
     repo.set_hub(&format!("127.0.0.1:{hub_port}"));
     repo.init();
@@ -87,7 +88,8 @@ fn unchanged_branch_heads_are_not_republished() {
 
 #[test]
 fn facts_publish_chunks_large_history() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let repo = TestRepo::new();
     repo.set_hub(&format!("127.0.0.1:{hub_port}"));
     repo.init();

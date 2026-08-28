@@ -9,6 +9,7 @@ use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use common::TestRepo;
+use common::start_hub_exclusive;
 use serde_json::Value;
 
 fn free_port() -> u16 {
@@ -21,29 +22,6 @@ fn free_port() -> u16 {
 
 /// In-process, in-memory hub (CellServer without a front door — token
 /// enforcement is covered by levi-hub's own tests).
-fn start_hub() -> u16 {
-    let port = free_port();
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            levi_core::link();
-            let server = myko_server::MykoServer::builder()
-                .with_bind_addr(([127, 0, 0, 1], port).into())
-                .build();
-            if let Err(e) = server.run().await {
-                eprintln!("in-process hub died: {e}");
-            }
-        });
-    });
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            return port;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    panic!("in-process hub did not start");
-}
 
 /// Second repo bootstrapped from the first via a one-time git fetch of the
 /// events ref (fresh-clone flow); afterwards they share only the hub.
@@ -64,7 +42,8 @@ fn bootstrap_pair(hub_port: u16) -> (TestRepo, TestRepo) {
 
 #[test]
 fn hub_leg_converges_two_disconnected_repos() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = bootstrap_pair(hub_port);
 
     // Diverge offline.
@@ -142,7 +121,8 @@ fn hub_leg_converges_two_disconnected_repos() {
 
 #[test]
 fn facts_reach_the_hub() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, _b) = bootstrap_pair(hub_port);
     let id = a.add("anchored", &[]);
     a.commit("anchor commit");
@@ -177,7 +157,8 @@ fn facts_reach_the_hub() {
 
 #[test]
 fn watch_streams_new_events() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = bootstrap_pair(hub_port);
     a.levi_ok(&["sync", "--no-git"]);
     b.levi_ok(&["sync", "--no-git"]);

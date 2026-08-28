@@ -13,6 +13,25 @@ pub fn free_port() -> u16 {
         .port()
 }
 
+/// Serialises in-process hubs.
+///
+/// Each hub is a full myko server, and myko sits on hyphae, whose reactive
+/// batch queue is process-global. Nine of them live at once in one test binary
+/// starve each other: a report that normally answers instantly blows its 10s
+/// deadline and the test dies with "hub did not answer the report in time".
+/// The failure moves between tests run to run, which is what a contention bug
+/// looks like rather than a broken assertion.
+///
+/// It also closes the port race: free_port() drops its listener before the
+/// server binds, so two hubs picking a port concurrently can pick the same one.
+pub static HUB_SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Hold this for as long as the hub is in use.
+pub struct HubSlot {
+    pub port: u16,
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
 /// Start an in-process myko hub on a free port; returns the port.
 pub fn start_hub() -> u16 {
     let port = free_port();
@@ -36,6 +55,16 @@ pub fn start_hub() -> u16 {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     panic!("in-process hub did not start");
+}
+
+/// Start a hub that owns the process-wide hub slot until the returned value is
+/// dropped — i.e. until the end of the test.
+pub fn start_hub_exclusive() -> HubSlot {
+    let guard = HUB_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+    HubSlot {
+        port: start_hub(),
+        _guard: guard,
+    }
 }
 
 pub struct TestRepo {

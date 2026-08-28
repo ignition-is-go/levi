@@ -5,7 +5,7 @@
 mod common;
 
 use common::TestRepo;
-use common::start_hub;
+use common::start_hub_exclusive;
 use predicates::prelude::*;
 use serde_json::Value;
 
@@ -25,7 +25,8 @@ fn two_projects(hub_port: u16) -> (TestRepo, TestRepo) {
 
 #[test]
 fn file_bug_upstream_and_block_on_it() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = two_projects(hub_port);
 
     // A files a bug in B's project, by name, through the hub.
@@ -264,7 +265,8 @@ fn cross_project_errors_are_clear() {
         .failure()
         .stderr(predicate::str::contains("need a hub"));
     // --dep with --project rejected.
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     repo.set_hub(&format!("127.0.0.1:{hub_port}"));
     repo.levi(&["add", "--project", "upstream", "t", "--dep", "abcd"])
         .assert()
@@ -319,7 +321,8 @@ fn machine_id_distinguishes_identical_hostname_and_worktree() {
 /// and does so without fetching any CommitFacts.
 #[test]
 fn ls_project_lists_foreign_tasks_and_ref_round_trips() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = two_projects(hub_port);
 
     // B files a task in its own project and pushes it to the hub.
@@ -365,7 +368,8 @@ fn ls_project_lists_foreign_tasks_and_ref_round_trips() {
 /// the hub still lists (proving the listing needs no facts).
 #[test]
 fn ls_all_projects_needs_no_facts() {
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = two_projects(hub_port);
     a.add("local downstream task", &[]);
     a.levi_ok(&["sync", "--no-git"]);
@@ -400,7 +404,8 @@ fn ls_cross_project_without_hub_fails_clearly() {
 #[test]
 fn issue_graph_report_is_computed_on_the_hub() {
     use std::time::Duration;
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = two_projects(hub_port);
 
     // upstream files a blocker; downstream depends on it.
@@ -468,7 +473,8 @@ fn issue_graph_report_is_computed_on_the_hub() {
 #[test]
 fn squash_resolves_from_facts_across_clients() {
     use std::time::Duration;
-    let hub_port = start_hub();
+    let __hub = start_hub_exclusive();
+    let hub_port = __hub.port;
     let (a, b) = two_projects(hub_port);
 
     // A closes a task anchored on a feature branch, squash-merges to main,

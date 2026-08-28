@@ -9,7 +9,7 @@ mod common;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use common::start_hub;
+use common::start_hub_exclusive;
 use levi::hub_client::HubSession;
 
 /// Run `f` on a worker thread, failing if it doesn't finish in `limit`.
@@ -27,7 +27,8 @@ fn within<F: FnOnce() + Send + 'static>(limit: Duration, what: &str, f: F) {
 
 #[test]
 fn dropped_session_tears_down_promptly() {
-    let port = start_hub();
+    let __hub = start_hub_exclusive();
+    let port = __hub.port;
     let addr = format!("127.0.0.1:{port}");
     within(
         Duration::from_secs(15),
@@ -44,7 +45,8 @@ fn dropped_session_tears_down_promptly() {
 fn dropped_session_survives_a_vanished_hub() {
     // Worst case from the incident: the client is mid-reconnect when it's
     // dropped, so teardown must not wait on the socket coming back.
-    let port = start_hub();
+    let __hub = start_hub_exclusive();
+    let port = __hub.port;
     let addr = format!("127.0.0.1:{port}");
     within(
         Duration::from_secs(15),
@@ -58,7 +60,8 @@ fn dropped_session_survives_a_vanished_hub() {
 
 #[test]
 fn explicit_close_still_works() {
-    let port = start_hub();
+    let __hub = start_hub_exclusive();
+    let port = __hub.port;
     let addr = format!("127.0.0.1:{port}");
     within(Duration::from_secs(15), "close()", move || {
         let session = HubSession::connect(&addr, Duration::from_secs(10)).expect("connects");
