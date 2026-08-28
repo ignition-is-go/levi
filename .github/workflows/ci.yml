@@ -42,11 +42,11 @@ jobs:
         include:
           - os: public-ci
             target: x86_64-unknown-linux-gnu
-          - os: [self-hosted, macOS, ARM64, site-lucid-lab]
+          - os: public-ci-macos
             target: x86_64-apple-darwin
-          - os: [self-hosted, macOS, ARM64, site-lucid-lab]
+          - os: public-ci-macos
             target: aarch64-apple-darwin
-          - os: [self-hosted, windows, x64]
+          - os: public-ci-windows
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
