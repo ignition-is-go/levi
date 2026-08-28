@@ -85,16 +85,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: public-ci
             target: x86_64-unknown-linux-gnu
             binary_ext: ''
-          - os: macos-15-intel
+          - os: [self-hosted, macOS, ARM64, site-lucid-lab]
             target: x86_64-apple-darwin
             binary_ext: ''
-          - os: macos-15
+          - os: [self-hosted, macOS, ARM64, site-lucid-lab]
             target: aarch64-apple-darwin
             binary_ext: ''
-          - os: windows-latest
+          - os: [self-hosted, windows, x64]
             target: x86_64-pc-windows-msvc
             binary_ext: .exe
     runs-on: ${{ matrix.os }}
@@ -169,8 +169,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15-intel, macos-15, windows-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: linux
+            runner: public-ci
+          - os: macos-intel
+            runner: [self-hosted, macOS, ARM64, site-lucid-lab]
+          - os: macos-arm
+            runner: [self-hosted, macOS, ARM64, site-lucid-lab]
+          - os: windows
+            runner: [self-hosted, windows, x64]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
