@@ -5,23 +5,11 @@
 mod common;
 
 use std::io::BufRead;
-use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use common::TestRepo;
 use common::start_hub_exclusive;
 use serde_json::Value;
-
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
-/// In-process, in-memory hub (CellServer without a front door — token
-/// enforcement is covered by levi-hub's own tests).
 
 /// Second repo bootstrapped from the first via a one-time git fetch of the
 /// events ref (fresh-clone flow); afterwards they share only the hub.
