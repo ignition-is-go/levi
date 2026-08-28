@@ -6,7 +6,7 @@ on:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: write
     outputs:
@@ -139,7 +139,7 @@ jobs:
   publish-release:
     needs: [prepare, release-binaries]
     if: needs.prepare.outputs.tag != ''
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: write
     steps:
