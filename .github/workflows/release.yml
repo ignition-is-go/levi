@@ -6,7 +6,9 @@ on:
 
 jobs:
   prepare:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on:
+      group: ci-trusted-linux-persistent
+      labels: [self-hosted, Linux, X64, cpu-ge-8, ram-ge-24g, disk-ge-100g]
     permissions:
       contents: write
     outputs:
@@ -139,7 +141,9 @@ jobs:
   publish-release:
     needs: [prepare, release-binaries]
     if: needs.prepare.outputs.tag != ''
-    runs-on: [self-hosted, Linux, X64]
+    runs-on:
+      group: ci-trusted-linux-persistent
+      labels: [self-hosted, Linux, X64, cpu-ge-8, ram-ge-24g, disk-ge-100g]
     permissions:
       contents: write
     steps:
