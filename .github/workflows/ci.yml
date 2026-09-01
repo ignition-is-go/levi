@@ -58,5 +58,5 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
+        run: sudo sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources && sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
       - run: cargo build --release --locked --package levi --target ${{ matrix.target }}

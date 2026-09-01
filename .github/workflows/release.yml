@@ -30,6 +30,8 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
 
       - name: Get GitHub App User ID
@@ -109,7 +111,7 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
+        run: sudo sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources && sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
       - name: Build Levi CLI
         run: cargo build --release --locked --package levi --target ${{ matrix.target }}
       - name: Package Levi CLI
