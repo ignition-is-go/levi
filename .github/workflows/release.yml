@@ -85,16 +85,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: public-ci
+          - os: ci-public-linux-ephemeral
             target: x86_64-unknown-linux-gnu
             binary_ext: ''
-          - os: public-ci-macos
+          - os: ci-macos-ephemeral
             target: x86_64-apple-darwin
             binary_ext: ''
-          - os: public-ci-macos
+          - os: ci-macos-ephemeral
             target: aarch64-apple-darwin
             binary_ext: ''
-          - os: public-ci-windows
+          - os: ci-windows-ephemeral
             target: x86_64-pc-windows-msvc
             binary_ext: .exe
     runs-on: ${{ matrix.os }}
@@ -171,13 +171,13 @@ jobs:
       matrix:
         include:
           - os: linux
-            runner: public-ci
+            runner: ci-public-linux-ephemeral
           - os: macos-intel
-            runner: public-ci-macos
+            runner: ci-macos-ephemeral
           - os: macos-arm
-            runner: public-ci-macos
+            runner: ci-macos-ephemeral
           - os: windows
-            runner: public-ci-windows
+            runner: ci-windows-ephemeral
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

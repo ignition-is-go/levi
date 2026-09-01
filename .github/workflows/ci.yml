@@ -11,7 +11,7 @@ env:
 
 jobs:
   check:
-    runs-on: public-ci
+    runs-on: ci-public-linux-ephemeral
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,13 +40,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: public-ci
+          - os: ci-public-linux-ephemeral
             target: x86_64-unknown-linux-gnu
-          - os: public-ci-macos
+          - os: ci-macos-ephemeral
             target: x86_64-apple-darwin
-          - os: public-ci-macos
+          - os: ci-macos-ephemeral
             target: aarch64-apple-darwin
-          - os: public-ci-windows
+          - os: ci-windows-ephemeral
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
