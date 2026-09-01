@@ -9,7 +9,9 @@ env:
 
 jobs:
   publish:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on:
+      group: ci-trusted-linux-persistent
+      labels: [self-hosted, Linux, X64, cpu-ge-8, ram-ge-24g, disk-ge-100g]
     permissions:
       contents: read
       id-token: write
