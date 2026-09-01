@@ -3145,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "levi"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3169,7 +3169,7 @@ dependencies = [
 
 [[package]]
 name = "levi-core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -3183,7 +3183,7 @@ dependencies = [
 
 [[package]]
 name = "levi-dash"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
@@ -3202,7 +3202,7 @@ dependencies = [
 
 [[package]]
 name = "levi-hub"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anyhow",
  "base64",
