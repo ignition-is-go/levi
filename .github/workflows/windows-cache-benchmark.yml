@@ -28,14 +28,14 @@ jobs:
         if: matrix.cache == 'rust-cache'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          shared-key: windows-release-benchmark-v2
+          shared-key: windows-release-benchmark-v3
           cache-bin: false
 
       - name: Restore kache
         if: matrix.cache == 'kache'
         uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # v1
         with:
-          cache-key-prefix: levi-windows-release-benchmark-v2
+          cache-key-prefix: levi-windows-release-benchmark-v3
           pr-comment: false
           max-size: 8GiB
 
@@ -43,6 +43,12 @@ jobs:
         id: build
         shell: bash
         run: |
+          # Git Bash prepends its GNU tools, including an incompatible link.exe.
+          # Resolve cl.exe from the activated VS environment and put its sibling
+          # MSVC linker ahead of Git's /usr/bin.
+          msvc_bin=$(dirname "$(command -v cl.exe)")
+          export PATH="$msvc_bin:$PATH"
+          command -v link.exe
           started_ms=$(date +%s%3N)
           set +e
           cargo build --release --locked --package levi --target x86_64-pc-windows-msvc
