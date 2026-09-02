@@ -1,10 +1,6 @@
 name: Windows cache benchmark
 
-on:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/windows-cache-benchmark.yml
+on: workflow_dispatch
 
 permissions:
   contents: read
@@ -32,41 +28,41 @@ jobs:
         if: matrix.cache == 'rust-cache'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          shared-key: windows-release-benchmark
+          shared-key: windows-release-benchmark-v2
           cache-bin: false
 
       - name: Restore kache
         if: matrix.cache == 'kache'
         uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # v1
         with:
-          cache-key-prefix: levi-windows-release-benchmark
+          cache-key-prefix: levi-windows-release-benchmark-v2
           pr-comment: false
           max-size: 8GiB
 
       - name: Build and record wall time
         id: build
-        shell: pwsh
+        shell: bash
         run: |
-          $timer = [System.Diagnostics.Stopwatch]::StartNew()
+          started_ms=$(date +%s%3N)
+          set +e
           cargo build --release --locked --package levi --target x86_64-pc-windows-msvc
-          $result = $LASTEXITCODE
-          $timer.Stop()
-          $seconds = [math]::Round($timer.Elapsed.TotalSeconds, 3)
-          "seconds=$seconds" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "### ${{ matrix.cache }}: $seconds seconds" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $result
+          result=$?
+          finished_ms=$(date +%s%3N)
+          seconds=$(awk "BEGIN { printf \"%.3f\", ($finished_ms - $started_ms) / 1000 }")
+          echo "seconds=$seconds" >> "$GITHUB_OUTPUT"
+          echo "### ${{ matrix.cache }}: $seconds seconds" >> "$GITHUB_STEP_SUMMARY"
+          exit "$result"
 
       - name: Record benchmark result
         if: always()
-        shell: pwsh
+        shell: bash
         run: |
-          $record = [ordered]@{
-            cache = '${{ matrix.cache }}'
-            build_seconds = '${{ steps.build.outputs.seconds }}'
-            run_attempt = '${{ github.run_attempt }}'
-            commit = '${{ github.sha }}'
-          }
-          $record | ConvertTo-Json | Set-Content benchmark-${{ matrix.cache }}.json
+          printf '{"cache":"%s","build_seconds":"%s","run_attempt":"%s","commit":"%s"}\n' \
+            '${{ matrix.cache }}' \
+            '${{ steps.build.outputs.seconds }}' \
+            '${{ github.run_attempt }}' \
+            '${{ github.sha }}' \
+            > benchmark-${{ matrix.cache }}.json
 
       - uses: actions/upload-artifact@v4
         if: always()
