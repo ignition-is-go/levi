@@ -15,7 +15,9 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        cache: [none, rust-cache, kache]
+        # kache-action v1 cannot install its ZIP on Windows because it passes
+        # Expand-Archive a temporary path without a .zip extension.
+        cache: [rust-cache]
     runs-on: ci-windows-ephemeral
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
