@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        cache: [kache]
+        cache: [sccache]
     runs-on: ci-windows-ephemeral
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -24,23 +24,21 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Install pinned kache workaround
-        if: matrix.cache == 'kache'
+      - name: Install pinned sccache
+        if: matrix.cache == 'sccache'
         shell: powershell
         run: |
-          $version = '0.16.0'
-          $archive = Join-Path $env:RUNNER_TEMP 'kache.zip'
-          $extract = Join-Path $env:RUNNER_TEMP 'kache-extract'
-          $toolDir = Join-Path $env:RUNNER_TOOL_CACHE "kache\$version\x64"
-          Invoke-WebRequest 'https://github.com/kunobi-ninja/kache/releases/download/v0.16.0/kache-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          $archive = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'sccache-extract'
+          Invoke-WebRequest 'https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-x86_64-pc-windows-msvc.zip' -OutFile $archive
           $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
-          if ($actual -ne 'b4b53a54926e5cdc8c084562fdf215780306c9d5dc7eeaff9e4eb70c0b47fe2a') {
-            throw "kache archive checksum mismatch: $actual"
+          if ($actual -ne 'e94cfc5b58cbe439302f586c1d1bd7980c2cd371d47bdf385ade657411e6f3ac') {
+            throw "sccache archive checksum mismatch: $actual"
           }
           Expand-Archive -LiteralPath $archive -DestinationPath $extract
-          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
-          Copy-Item (Get-ChildItem $extract -Recurse -Filter kache.exe | Select-Object -First 1).FullName $toolDir
-          New-Item -ItemType File -Force -Path "$toolDir.complete" | Out-Null
+          $binary = (Get-ChildItem $extract -Recurse -Filter sccache.exe | Select-Object -First 1).FullName
+          Copy-Item $binary (Join-Path $env:RUNNER_TEMP 'sccache.exe')
+          $env:RUNNER_TEMP | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Restore rust-cache
         if: matrix.cache == 'rust-cache'
@@ -49,25 +47,18 @@ jobs:
           shared-key: windows-release-benchmark-v3
           cache-bin: false
 
-      - name: Restore kache
-        if: matrix.cache == 'kache'
-        uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # v1
-        with:
-          version: v0.16.0
-          s3-bucket: ${{ vars.CI_CACHE_S3_BUCKET }}
-          s3-region: us-east-1
-          s3-prefix: levi/windows-release
-          s3-endpoint: ${{ vars.CI_CACHE_S3_ENDPOINT }}
-          s3-access-key-id: ${{ secrets.CI_CACHE_S3_ACCESS_KEY_ID }}
-          s3-secret-access-key: ${{ secrets.CI_CACHE_S3_SECRET_ACCESS_KEY }}
-          manifest-key: x86_64-pc-windows-msvc-release
-          namespace: levi-windows-release
-          pr-comment: false
-          max-size: 8GiB
-
       - name: Build and record wall time
         id: build
         shell: bash
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: ${{ vars.CI_CACHE_S3_BUCKET }}
+          SCCACHE_REGION: auto
+          SCCACHE_ENDPOINT: ${{ vars.CI_CACHE_S3_ENDPOINT }}
+          SCCACHE_S3_USE_SSL: "false"
+          SCCACHE_S3_KEY_PREFIX: levi/windows-release/sccache-v0.17
+          AWS_ACCESS_KEY_ID: ${{ secrets.CI_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CI_CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
           # Git Bash prepends its GNU tools, including an incompatible link.exe.
           # Resolve cl.exe from the activated VS environment and put its sibling
@@ -75,6 +66,9 @@ jobs:
           msvc_bin=$(dirname "$(command -v cl.exe)")
           export PATH="$msvc_bin:$PATH"
           command -v link.exe
+          if [[ '${{ matrix.cache }}' == 'sccache' ]]; then
+            sccache --zero-stats
+          fi
           started_ms=$(date +%s%3N)
           set +e
           cargo build --release --locked --package levi --target x86_64-pc-windows-msvc
@@ -83,6 +77,10 @@ jobs:
           seconds=$(awk "BEGIN { printf \"%.3f\", ($finished_ms - $started_ms) / 1000 }")
           echo "seconds=$seconds" >> "$GITHUB_OUTPUT"
           echo "### ${{ matrix.cache }}: $seconds seconds" >> "$GITHUB_STEP_SUMMARY"
+          if [[ '${{ matrix.cache }}' == 'sccache' ]]; then
+            sccache --show-stats
+            sccache --stop-server || true
+          fi
           exit "$result"
 
       - name: Record benchmark result
