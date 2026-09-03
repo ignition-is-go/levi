@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   check:
-    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-check.yml@dc9f125e7dfa9ddbfa95084acfcf1861ea726e8d
+    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-check.yml@d74bdeb98b616b44b32d36276cbfb9af19be9243
+    secrets: inherit
     with:
       cargo-flux-version: "0.7.0"
       targets: wasm32-unknown-unknown
@@ -26,6 +27,7 @@ jobs:
 
   native-cli:
     name: Native CLI
-    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native.yml@dc9f125e7dfa9ddbfa95084acfcf1861ea726e8d
+    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native.yml@d74bdeb98b616b44b32d36276cbfb9af19be9243
+    secrets: inherit
     with:
       package: levi
