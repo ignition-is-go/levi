@@ -18,16 +18,20 @@ permissions:
 
 jobs:
   check:
-    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-check.yml@d74bdeb98b616b44b32d36276cbfb9af19be9243
+    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-check.yml@195ec1619ae5ae3ab0808dfe8f9e5091874027a2
     secrets: inherit
     with:
       cargo-flux-version: "0.7.0"
       targets: wasm32-unknown-unknown
       tasks: check lint test check-wasm
+      runner-json: '"ci-public-linux-ephemeral"'
 
   native-cli:
     name: Native CLI
-    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native.yml@d74bdeb98b616b44b32d36276cbfb9af19be9243
+    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native.yml@195ec1619ae5ae3ab0808dfe8f9e5091874027a2
     secrets: inherit
     with:
       package: levi
+      linux-runner-json: '"ci-public-linux-ephemeral"'
+      macos-runner-json: '"ci-macos-ephemeral"'
+      windows-runner-json: '{"group":"ci-windows-ephemeral","labels":["self-hosted","Windows","X64","cpu-ge-8","disk-ge-100g"]}'
