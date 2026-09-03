@@ -15,9 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        # kache-action v1 cannot install its ZIP on Windows because it passes
-        # Expand-Archive a temporary path without a .zip extension.
-        cache: [rust-cache]
+        cache: [kache]
     runs-on: ci-windows-ephemeral
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -25,6 +23,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - name: Install pinned kache workaround
+        if: matrix.cache == 'kache'
+        shell: powershell
+        run: |
+          $version = '0.16.0'
+          $archive = Join-Path $env:RUNNER_TEMP 'kache.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'kache-extract'
+          $toolDir = Join-Path $env:RUNNER_TOOL_CACHE "kache\$version\x64"
+          Invoke-WebRequest 'https://github.com/kunobi-ninja/kache/releases/download/v0.16.0/kache-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actual -ne 'b4b53a54926e5cdc8c084562fdf215780306c9d5dc7eeaff9e4eb70c0b47fe2a') {
+            throw "kache archive checksum mismatch: $actual"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract
+          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+          Copy-Item (Get-ChildItem $extract -Recurse -Filter kache.exe | Select-Object -First 1).FullName $toolDir
+          New-Item -ItemType File -Force -Path "$toolDir.complete" | Out-Null
 
       - name: Restore rust-cache
         if: matrix.cache == 'rust-cache'
@@ -37,7 +53,15 @@ jobs:
         if: matrix.cache == 'kache'
         uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # v1
         with:
-          cache-key-prefix: levi-windows-release-benchmark-v3
+          version: v0.16.0
+          s3-bucket: ${{ vars.CI_CACHE_S3_BUCKET }}
+          s3-region: us-east-1
+          s3-prefix: levi/windows-release
+          s3-endpoint: ${{ vars.CI_CACHE_S3_ENDPOINT }}
+          s3-access-key-id: ${{ secrets.CI_CACHE_S3_ACCESS_KEY_ID }}
+          s3-secret-access-key: ${{ secrets.CI_CACHE_S3_SECRET_ACCESS_KEY }}
+          manifest-key: x86_64-pc-windows-msvc-release
+          namespace: levi-windows-release
           pr-comment: false
           max-size: 8GiB
 
