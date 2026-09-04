@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   check:
-    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-quality.yml@2c94ebf4fedd47f0c36d491e0dee5ad446a071b5 # v1 candidate
+    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-quality.yml@2c94ebf4fedd47f0c36d491e0dee5ad446a071b5 # v1.0.0
     secrets:
       CI_CACHE_ENDPOINT: ${{ secrets.CI_CACHE_ENDPOINT }}
       CI_CACHE_BUCKET: ${{ secrets.CI_CACHE_BUCKET }}
@@ -32,7 +32,7 @@ jobs:
 
   native-cli:
     name: Native CLI
-    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native-build.yml@2c94ebf4fedd47f0c36d491e0dee5ad446a071b5 # v1 candidate
+    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native-build.yml@2c94ebf4fedd47f0c36d491e0dee5ad446a071b5 # v1.0.0
     secrets:
       CI_CACHE_ENDPOINT: ${{ secrets.CI_CACHE_ENDPOINT }}
       CI_CACHE_BUCKET: ${{ secrets.CI_CACHE_BUCKET }}
