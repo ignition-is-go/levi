@@ -6,63 +6,34 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   check:
-    runs-on: ci-public-linux-ephemeral
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-      - run: sudo sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources && sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo install cargo-flux
-      - run: cargo flux run check
-      - run: cargo flux run lint
-      - run: cargo flux run test
-
-      # wasm32 coverage for levi-dash (see its `[package.metadata.flux]`
-      # tasks list) — `check` alone only exercises the native target, so a
-      # break in `#[cfg(target_arch = "wasm32")]` code would pass CI silently.
-      - run: cargo flux run check-wasm
+    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-check.yml@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
+    secrets: inherit
+    with:
+      cargo-flux-version: "0.7.0"
+      targets: wasm32-unknown-unknown
+      tasks: check lint test check-wasm
+      runner-json: '"ci-public-linux-ephemeral"'
 
   native-cli:
-    name: Native CLI (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ci-public-linux-ephemeral
-            target: x86_64-unknown-linux-gnu
-          - os: ci-macos-ephemeral
-            target: x86_64-apple-darwin
-          - os: ci-macos-ephemeral
-            target: aarch64-apple-darwin
-          - os: ci-windows-ephemeral
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Restore Windows Cargo cache
-        if: runner.os == 'Windows'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          shared-key: windows-release-v1
-          cache-bin: false
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: sudo sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources && sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
-      - run: cargo build --release --locked --package levi --target ${{ matrix.target }}
+    name: Native CLI
+    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native.yml@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
+    secrets: inherit
+    with:
+      package: levi
+      linux-runner-json: '"ci-public-linux-ephemeral"'
+      macos-runner-json: '"ci-macos-ephemeral"'
+      windows-runner-json: '{"group":"ci-windows-ephemeral","labels":["self-hosted","Windows","X64","cpu-ge-8","disk-ge-100g"]}'
+      macos-sccache: false
+      windows-target-cache: false
