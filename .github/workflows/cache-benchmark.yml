@@ -20,41 +20,65 @@ jobs:
         include:
           - platform: Linux x64
             runner: '"ci-public-linux-ephemeral"'
-          - platform: macOS x64
+            target_cache: true
+            sccache: true
+          - platform: macOS
             runner: '"ci-macos-ephemeral"'
+            target_cache: true
+            sccache: false
           - platform: Windows x64
             runner: '{"group":"ci-windows-ephemeral","labels":["self-hosted","Windows","X64","cpu-ge-8","disk-ge-100g"]}'
+            target_cache: false
+            sccache: true
     runs-on: ${{ fromJSON(matrix.runner) }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: ignition-is-go/pulse-actions/resource-report@10c3dad624f87d3ba736141350b3c81884802db0
-      - uses: ignition-is-go/pulse-actions/setup-rust@10c3dad624f87d3ba736141350b3c81884802db0
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        if: runner.os == 'Windows'
+      - uses: ignition-is-go/pulse-actions/resource-report@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
+      - uses: ignition-is-go/pulse-actions/setup-rust@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
         with:
           toolchain: stable
-          cache-targets: false
-          cache-shared-key: controlled-cold-warm-20260904-v1
+          cache-targets: ${{ matrix.target_cache }}
+          cache-shared-key: controlled-cold-warm-20260904-v4
           windows-sparse-index: true
-          windows-sparse-index-key: levi-benchmark-windows-index-20260904-v1
-          sccache-endpoint: ${{ secrets.CI_CACHE_ENDPOINT }}
-          sccache-bucket: ${{ secrets.CI_CACHE_BUCKET }}
-          sccache-access-key: ${{ secrets.CI_CACHE_ACCESS_KEY }}
-          sccache-secret-key: ${{ secrets.CI_CACHE_SECRET_KEY }}
+          windows-sparse-index-key: levi-benchmark-windows-index-20260904-v4
+          sccache-endpoint: ${{ matrix.sccache && secrets.CI_CACHE_ENDPOINT || '' }}
+          sccache-bucket: ${{ matrix.sccache && secrets.CI_CACHE_BUCKET || '' }}
+          sccache-access-key: ${{ matrix.sccache && secrets.CI_CACHE_ACCESS_KEY || '' }}
+          sccache-secret-key: ${{ matrix.sccache && secrets.CI_CACHE_SECRET_KEY || '' }}
       - name: Select isolated compiler-cache namespace
+        if: matrix.sccache
         shell: bash
         run: |
           sccache --stop-server || true
-          echo 'SCCACHE_S3_KEY_PREFIX=rust/benchmarks/controlled-cold-warm-20260904-v1' >> "$GITHUB_ENV"
-      - name: Build release
+          echo 'SCCACHE_S3_KEY_PREFIX=rust/benchmarks/controlled-cold-warm-20260904-v4' >> "$GITHUB_ENV"
+      - name: Build release on Unix
+        if: runner.os != 'Windows'
         shell: bash
         env:
-          SCCACHE_S3_KEY_PREFIX: rust/benchmarks/controlled-cold-warm-20260904-v1
+          SCCACHE_S3_KEY_PREFIX: ${{ matrix.sccache && 'rust/benchmarks/controlled-cold-warm-20260904-v4' || '' }}
+        run: |
+          if [[ "${{ matrix.sccache }}" == true ]]; then
+            sccache --start-server
+            sccache --zero-stats
+          fi
+          cargo build --release --locked --package levi
+          if [[ "${{ matrix.sccache }}" == true ]]; then
+            sccache --show-stats
+          fi
+      - name: Build release on Windows
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          SCCACHE_S3_KEY_PREFIX: rust/benchmarks/controlled-cold-warm-20260904-v4
         run: |
           sccache --start-server
           sccache --zero-stats
           cargo build --release --locked --package levi
           sccache --show-stats
-      - uses: ignition-is-go/pulse-actions/resource-report@10c3dad624f87d3ba736141350b3c81884802db0
+      - uses: ignition-is-go/pulse-actions/resource-report@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
         if: always()
