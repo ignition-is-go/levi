@@ -1,0 +1,60 @@
+name: Cache benchmark
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: cache-benchmark-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux x64
+            runner: '"ci-public-linux-ephemeral"'
+          - platform: macOS x64
+            runner: '"ci-macos-ephemeral"'
+          - platform: Windows x64
+            runner: '{"group":"ci-windows-ephemeral","labels":["self-hosted","Windows","X64","cpu-ge-8","disk-ge-100g"]}'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: ignition-is-go/pulse-actions/resource-report@10c3dad624f87d3ba736141350b3c81884802db0
+      - uses: ignition-is-go/pulse-actions/setup-rust@10c3dad624f87d3ba736141350b3c81884802db0
+        with:
+          toolchain: stable
+          cache-targets: false
+          cache-shared-key: controlled-cold-warm-20260904-v1
+          windows-sparse-index: true
+          windows-sparse-index-key: levi-benchmark-windows-index-20260904-v1
+          sccache-endpoint: ${{ secrets.CI_CACHE_ENDPOINT }}
+          sccache-bucket: ${{ secrets.CI_CACHE_BUCKET }}
+          sccache-access-key: ${{ secrets.CI_CACHE_ACCESS_KEY }}
+          sccache-secret-key: ${{ secrets.CI_CACHE_SECRET_KEY }}
+      - name: Select isolated compiler-cache namespace
+        shell: bash
+        run: |
+          sccache --stop-server || true
+          echo 'SCCACHE_S3_KEY_PREFIX=rust/benchmarks/controlled-cold-warm-20260904-v1' >> "$GITHUB_ENV"
+      - name: Build release
+        shell: bash
+        env:
+          SCCACHE_S3_KEY_PREFIX: rust/benchmarks/controlled-cold-warm-20260904-v1
+        run: |
+          sccache --start-server
+          sccache --zero-stats
+          cargo build --release --locked --package levi
+          sccache --show-stats
+      - uses: ignition-is-go/pulse-actions/resource-report@10c3dad624f87d3ba736141350b3c81884802db0
+        if: always()
