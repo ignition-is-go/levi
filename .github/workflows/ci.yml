@@ -18,22 +18,30 @@ permissions:
 
 jobs:
   check:
-    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-check.yml@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
-    secrets: inherit
+    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-quality.yml@2c94ebf4fedd47f0c36d491e0dee5ad446a071b5 # v1 candidate
+    secrets:
+      CI_CACHE_ENDPOINT: ${{ secrets.CI_CACHE_ENDPOINT }}
+      CI_CACHE_BUCKET: ${{ secrets.CI_CACHE_BUCKET }}
+      CI_CACHE_ACCESS_KEY: ${{ secrets.CI_CACHE_ACCESS_KEY }}
+      CI_CACHE_SECRET_KEY: ${{ secrets.CI_CACHE_SECRET_KEY }}
     with:
       cargo-flux-version: "0.7.0"
       targets: wasm32-unknown-unknown
       tasks: check lint test check-wasm
-      runner-json: '"ci-public-linux-ephemeral"'
+      linux-runner-json: '"ci-public-linux-ephemeral"'
 
   native-cli:
     name: Native CLI
-    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native.yml@f3900bc713c363b9f468dbf9e26b9fad7b2c17aa
-    secrets: inherit
+    uses: ignition-is-go/pulse-actions/.github/workflows/rust-native-build.yml@2c94ebf4fedd47f0c36d491e0dee5ad446a071b5 # v1 candidate
+    secrets:
+      CI_CACHE_ENDPOINT: ${{ secrets.CI_CACHE_ENDPOINT }}
+      CI_CACHE_BUCKET: ${{ secrets.CI_CACHE_BUCKET }}
+      CI_CACHE_ACCESS_KEY: ${{ secrets.CI_CACHE_ACCESS_KEY }}
+      CI_CACHE_SECRET_KEY: ${{ secrets.CI_CACHE_SECRET_KEY }}
     with:
       package: levi
       linux-runner-json: '"ci-public-linux-ephemeral"'
       macos-runner-json: '"ci-macos-ephemeral"'
       windows-runner-json: '{"group":"ci-windows-ephemeral","labels":["self-hosted","Windows","X64","cpu-ge-8","disk-ge-100g"]}'
-      macos-sccache: false
+      macos-compiler-cache: false
       windows-target-cache: false
