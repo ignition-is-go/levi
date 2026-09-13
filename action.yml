@@ -87,7 +87,6 @@ runs:
 
         case "${RUNNER_OS}:${RUNNER_ARCH}" in
           Linux:X64) target=x86_64-unknown-linux-gnu ;;
-          macOS:X64) target=x86_64-apple-darwin ;;
           macOS:ARM64) target=aarch64-apple-darwin ;;
           *)
             echo "Levi does not publish a binary for ${RUNNER_OS}/${RUNNER_ARCH}" >&2
