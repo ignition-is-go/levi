@@ -14,7 +14,6 @@ fn action_installs_verified_release_assets_and_runs_the_gate() {
     let action = workspace_file("action.yml");
     for expected in [
         "x86_64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
         "aarch64-apple-darwin",
         "x86_64-pc-windows-msvc",
         "levi-${version}-${target}.tgz",
@@ -28,6 +27,7 @@ fn action_installs_verified_release_assets_and_runs_the_gate() {
     assert!(action.contains("Checksum mismatch"));
     assert!(action.contains("inputs.fetch-events == 'true'"));
     assert!(action.contains("inputs.check == 'true'"));
+    assert!(!action.contains("x86_64-apple-darwin"));
 }
 
 #[test]
@@ -54,4 +54,7 @@ fn release_builds_checksums_and_publishes_before_smoke_testing() {
         publish < verify,
         "action smoke test must follow release publication"
     );
+    assert!(workflow.contains("-eq 3"));
+    assert!(!workflow.contains("macos-intel"));
+    assert!(!workflow.contains("x86_64-apple-darwin"));
 }

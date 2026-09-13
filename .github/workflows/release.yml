@@ -91,9 +91,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             binary_ext: ''
           - os: ci-macos-ephemeral
-            target: x86_64-apple-darwin
-            binary_ext: ''
-          - os: ci-macos-ephemeral
             target: aarch64-apple-darwin
             binary_ext: ''
           - os: ci-windows-ephemeral
@@ -154,8 +151,8 @@ jobs:
         working-directory: dist
         run: |
           set -euo pipefail
-          test "$(find . -maxdepth 1 -name 'levi-*.tgz' | wc -l)" -eq 4
-          test "$(find . -maxdepth 1 -name 'levi-*.tgz.sha256' | wc -l)" -eq 4
+          test "$(find . -maxdepth 1 -name 'levi-*.tgz' | wc -l)" -eq 3
+          test "$(find . -maxdepth 1 -name 'levi-*.tgz.sha256' | wc -l)" -eq 3
           for checksum in levi-*.tgz.sha256; do
             sha256sum --check "$checksum"
           done
@@ -174,8 +171,6 @@ jobs:
         include:
           - os: linux
             runner: ci-public-linux-ephemeral
-          - os: macos-intel
-            runner: ci-macos-ephemeral
           - os: macos-arm
             runner: ci-macos-ephemeral
           - os: windows
