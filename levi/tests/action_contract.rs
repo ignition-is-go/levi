@@ -40,6 +40,7 @@ fn release_builds_checksums_and_publishes_before_smoke_testing() {
         "actions/download-artifact@v4",
         "sha256sum --check",
         "gh release create",
+        "--repo \"$GITHUB_REPOSITORY\"",
         "verify-action:",
         "uses: ./",
     ] {

@@ -162,7 +162,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes --latest dist/*
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest dist/*
 
   verify-action:
     needs: [prepare, publish-release]
