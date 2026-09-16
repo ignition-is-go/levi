@@ -28,7 +28,7 @@ jobs:
       cargo-flux-version: "0.7.0"
       targets: wasm32-unknown-unknown
       tasks: check lint test check-wasm
-      linux-runner-json: '"ci-public-linux-ephemeral"'
+      linux-runner-json: '["self-hosted","Linux","X64","ram-ge-16g","disk-ge-100g"]'
 
   native-cli:
     name: Native CLI
@@ -41,8 +41,8 @@ jobs:
     with:
       package: levi
       macos-x64: false
-      linux-runner-json: '"ci-public-linux-ephemeral"'
-      macos-runner-json: '"ci-macos-ephemeral"'
+      linux-runner-json: '["self-hosted","Linux","X64","ram-ge-16g","disk-ge-100g"]'
+      macos-runner-json: '["self-hosted","macOS","ARM64","site-lucid-lab","ram-ge-24g","disk-ge-100g"]'
       windows-runner-json: '"windows-2025"'
       macos-compiler-cache: false
       windows-compiler-cache: false
