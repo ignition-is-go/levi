@@ -29,10 +29,14 @@ jobs:
           persist-credentials: false
           token: ${{ steps.app-token.outputs.token }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ignition-is-go/pulse-actions/actions/setup-rust@v1.1.1
         with:
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+          cache-shared-key: levi-release-prepare-v1
+          compiler-cache-endpoint: ${{ secrets.CI_CACHE_ENDPOINT }}
+          compiler-cache-bucket: ${{ secrets.CI_CACHE_BUCKET }}
+          compiler-cache-access-key: ${{ secrets.CI_CACHE_ACCESS_KEY }}
+          compiler-cache-secret-key: ${{ secrets.CI_CACHE_SECRET_KEY }}
 
       - name: Get GitHub App User ID
         id: get-user-id
@@ -103,9 +107,14 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ignition-is-go/pulse-actions/actions/setup-rust@v1.1.1
         with:
           targets: ${{ matrix.target }}
+          cache-shared-key: levi-release-${{ matrix.target }}-v1
+          compiler-cache-endpoint: ${{ secrets.CI_CACHE_ENDPOINT }}
+          compiler-cache-bucket: ${{ secrets.CI_CACHE_BUCKET }}
+          compiler-cache-access-key: ${{ secrets.CI_CACHE_ACCESS_KEY }}
+          compiler-cache-secret-key: ${{ secrets.CI_CACHE_SECRET_KEY }}
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources && sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev
