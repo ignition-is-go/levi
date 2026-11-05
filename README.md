@@ -71,8 +71,9 @@ read, so a verification on a feature branch shows on main once it's merged.
 from the newest review that applies here. `review_source` is `declared`,
 because a review is only as good as the identity behind it. When the verified
 commit isn't the one the task closed at here, `review_differs` gives both,
-labelled `observed`, since that comes from git alone. A task sent back is
-open and eligible again, and `next` says why.
+labelled `observed`, since that comes from git alone. A sent-back task that's
+still open stays eligible, and `next` says why; `send-back` doesn't reopen a
+closed task (use `levi reopen`).
 
 A task's claimant, or its closer, can't review it. Identity is matched on
 (dev, machine, worktree), as claims are, so a second session in another
@@ -80,8 +81,9 @@ worktree on the same machine can. A closer who never claimed the task is
 matched on (dev, machine) only, so they get a warning instead of a refusal.
 levi's identity is self-declared, so this catches mistakes, not impostors.
 
-`check-claims --require-review` also fails unless each task has a verified
-review that applies at the tested commit.
+`check-claims --require-review` also fails unless each task's newest review
+that applies at the tested commit is a verification: no review there, or a
+send-back, fails it.
 
 ## GitHub Action
 
