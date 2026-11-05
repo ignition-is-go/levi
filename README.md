@@ -72,8 +72,8 @@ It's built to run on every session start:
 - It gives up after one second, and on that or any failure (not a repository,
   no events, no git `user.email`) prints nothing and exits 0. `--verbose` says
   why on stderr.
-- The block is at most 40 lines and 4 KB. Claims that don't fit are counted;
-  the next tasks always keep their room.
+- The text block is at most 40 lines and 4 KB, and no line is over 512 bytes.
+  Claims that don't fit are counted; the next tasks always keep their room.
 - Task text is untrusted. Control and invisible characters become spaces,
   `&`, `<`, `>` and `"` are escaped, and each piece is cut to 120 characters,
   so a title can't break a line, close the block or pose as a tag. The block
@@ -82,7 +82,8 @@ It's built to run on every session start:
   another project then counts as unresolved, so still blocking, and it may list
   fewer tasks than `levi next`. Never more.
 
-`--json` gives `levi.session-start/1`, with `claims` and `next`.
+`--json` gives `levi.session-start/1`, with `claims` and `next`, for programs:
+its text isn't escaped or cut, and it lists every claim.
 
 ## GitHub Action
 

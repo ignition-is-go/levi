@@ -44,6 +44,10 @@ pub const MAX_LINES: usize = 40;
 pub const MAX_BYTES: usize = 4096;
 /// Characters kept from any one piece of task text.
 pub const MAX_TEXT: usize = 120;
+/// Bytes in any one line of the block. Escaping can grow a piece of text to
+/// six times its characters, so lines are capped too: with the fixed lines
+/// and three next tasks at this cap, the block still fits [`MAX_BYTES`].
+pub const MAX_LINE_BYTES: usize = 512;
 /// Tasks shown from the top of `next`.
 pub const NEXT_COUNT: usize = 3;
 
@@ -68,9 +72,15 @@ struct Row {
 
 /// Run within [`BUDGET`]; print the block, or nothing.
 pub fn run(json_output: bool, verbose: bool) {
+    // A panic is a failure like any other: say nothing unless asked.
+    if !verbose {
+        std::panic::set_hook(Box::new(|_| {}));
+    }
     let (tx, rx) = mpsc::channel();
     // The work runs on its own thread so the budget holds whatever it costs;
-    // if it overruns, the process exits and takes the thread with it.
+    // if it overruns, the process exits and takes the thread with it. A git
+    // child the thread started (patch-id, for squash detection) may finish
+    // on its own after that; it only reads.
     std::thread::spawn(move || {
         let _ = tx.send(snapshot());
     });
@@ -210,7 +220,25 @@ fn is_invisible(c: char) -> bool {
         | '\u{E0000}'..='\u{E007F}')
 }
 
+/// Cut a line to [`MAX_LINE_BYTES`], on a character boundary.
+fn fit(mut line: String) -> String {
+    let ellipsis = '…'.len_utf8();
+    if line.len() > MAX_LINE_BYTES {
+        let mut end = MAX_LINE_BYTES - ellipsis;
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        line.truncate(end);
+        line.push('…');
+    }
+    line
+}
+
 fn row_line(row: &Row) -> String {
+    fit(row_text(row))
+}
+
+fn row_text(row: &Row) -> String {
     let mut line = format!(
         "- {} {} {}",
         clean(&row.id),
@@ -229,7 +257,7 @@ fn row_line(row: &Row) -> String {
 /// room is set aside first, so a long list of claims can't push them out;
 /// claims that don't fit are counted.
 pub fn render(s: &Snapshot) -> String {
-    let open = format!("{OPEN} project=\"{}\">", clean(&s.project));
+    let open = fit(format!("{OPEN} project=\"{}\">", clean(&s.project)));
     let claims_heading = "Tasks you have claimed here:";
     let next_heading =
         "Next by `levi next`'s ranking (not claimed; `levi next --claim` takes the top one):";
@@ -242,11 +270,14 @@ pub fn render(s: &Snapshot) -> String {
     let overflow = |n: usize| format!("- and {n} more not shown: see `levi ls --mine`");
 
     let fixed: Vec<&str> = vec![&open, claims_heading, next_heading, FOOTER, CLOSE];
-    let mut lines_left = MAX_LINES - fixed.len() - next.len() - 1;
-    let mut bytes_left = MAX_BYTES
-        - fixed.iter().map(|l| l.len() + 1).sum::<usize>()
-        - next.iter().map(|l| l.len() + 1).sum::<usize>()
-        - (overflow(claims.len()).len() + 1);
+    // Saturating, so no input can wrap the budget: at worst no claims fit.
+    let mut lines_left = MAX_LINES.saturating_sub(fixed.len() + next.len() + 1);
+    let mut bytes_left = MAX_BYTES.saturating_sub(
+        fixed.iter().map(|l| l.len() + 1).sum::<usize>()
+            + next.iter().map(|l| l.len() + 1).sum::<usize>()
+            + overflow(claims.len()).len()
+            + 1,
+    );
     let mut shown = Vec::new();
     for line in &claims {
         if lines_left == 0 || line.len() + 1 > bytes_left {
@@ -353,6 +384,32 @@ mod tests {
             "next was pushed out"
         );
         assert_eq!(out.matches("</levi_state>").count(), 1);
+    }
+
+    #[test]
+    fn hostile_text_everywhere_stays_within_the_bounds() {
+        let worst = "\"".repeat(500);
+        let hostile = |_| Row {
+            id: worst.clone(),
+            priority: worst.clone(),
+            title: worst.clone(),
+            note: worst.clone(),
+        };
+        let s = Snapshot {
+            project: worst.clone(),
+            claims: (0..100).map(hostile).collect(),
+            next: (0..NEXT_COUNT).map(hostile).collect(),
+        };
+        let out = render(&s);
+        assert!(
+            out.lines().count() <= MAX_LINES,
+            "{} lines",
+            out.lines().count()
+        );
+        assert!(out.len() <= MAX_BYTES, "{} bytes", out.len());
+        assert!(out.lines().all(|l| l.len() <= MAX_LINE_BYTES));
+        assert!(out.ends_with("</levi_state>\n"));
+        assert!(out.contains("more not shown"));
     }
 
     #[test]
