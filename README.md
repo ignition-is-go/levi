@@ -83,7 +83,9 @@ levi's identity is self-declared, so this catches mistakes, not impostors.
 
 `levi request-read ID [--commit SHA]` asks for a read before a merge, and
 `levi withdraw-read ID` takes your ask back. The request stays open until
-anyone reviews the task, and asking again replaces your earlier request.
+someone reviews the task at that commit or a later one, after the request was
+made; a review of an older commit doesn't answer it. Asking again replaces your
+earlier request.
 `show` lists requests, and marks one with `closed_before_read` when a close
 that applies here was made while it was still open.
 

@@ -1,7 +1,8 @@
 //! `levi request-read` / `levi withdraw-read` — ask for a read of a task at
-//! a commit before it's merged, or take the ask back. A later review of the
-//! task by anyone answers it; until then `check-claims --require-review`
-//! fails. One request per requester per task: asking again replaces it.
+//! a commit before it's merged, or take the ask back. A review of the task
+//! made after the request, by anyone, at that commit or a descendant
+//! answers it; until then `check-claims --require-review` fails. One
+//! request per requester per task: asking again replaces it.
 
 use anyhow::{Context, Result, bail};
 use levi_core::ReadRequest;

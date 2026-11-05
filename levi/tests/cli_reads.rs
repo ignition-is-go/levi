@@ -164,3 +164,26 @@ fn an_open_request_fails_the_review_gate() {
     assert_eq!(result["ok"], true);
     assert_eq!(result["tasks"][0]["open_reads"], 0);
 }
+
+#[test]
+fn a_review_of_an_older_commit_does_not_answer_a_request() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("read the latest", &[]);
+    let reviewer = other_worktree(&repo, "reviewer");
+    let older = repo.commit("first draft");
+    let newer = repo.commit("second draft");
+    repo.levi_ok(&["request-read", &id, "--commit", &newer]);
+
+    // Reading the first draft after the request doesn't answer a request
+    // for the second.
+    ok_in(&repo, &reviewer, &["verify", &id, "--commit", &older]);
+    let reqs = requests(&repo, &id);
+    assert_eq!(reqs[0]["open"], true);
+    assert!(reqs[0]["answered_by"].is_null());
+
+    ok_in(&repo, &reviewer, &["verify", &id, "--commit", &newer]);
+    let reqs = requests(&repo, &id);
+    assert_eq!(reqs[0]["open"], false);
+    assert_eq!(reqs[0]["answered_by"]["commit"], newer.as_str());
+}

@@ -70,7 +70,7 @@ pub fn review_gate(
             Ancestry::Unknown => resolution = resolution.weaken(Resolution::Partial),
         }
     }
-    let open_reads = crate::reads::read_request_states(world, task_id, &mut *anc)
+    let open_reads = crate::reads::read_request_states(world, task_id, &mut *anc, &mut *order)
         .iter()
         .filter(|r| r.is_open())
         .count();

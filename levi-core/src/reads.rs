@@ -3,13 +3,16 @@
 
 use crate::entities::{ReadRequest, Review, StatusKind};
 use crate::materialize::World;
-use crate::resolve::{AncestorSet, Ancestry};
+use crate::resolve::{AncestorSet, Ancestry, CommitOrder};
 
 #[derive(Debug, Clone)]
 pub struct ReadRequestState<'a> {
     pub request: &'a ReadRequest,
-    /// The first review of the task made after the request, by anyone. A
-    /// review answers wherever it was made; its commit needn't apply here.
+    /// The first review of the task made after the request, by anyone, that
+    /// read the requested commit or a descendant of it. A review of an older
+    /// commit, or one whose order against the request can't be answered,
+    /// doesn't answer it. A review answers wherever it was made; its commit
+    /// needn't apply on this checkout.
     pub answered_by: Option<&'a Review>,
     /// A close that applies on this checkout was made while the request was
     /// open, so it merged before anyone read it. Worked out from the log and git.
@@ -23,11 +26,14 @@ impl ReadRequestState<'_> {
 }
 
 /// Every read request on `task_id` that hasn't been withdrawn, oldest first,
-/// with whether it's answered and whether a close beat the read here.
+/// with whether it's answered and whether a close beat the read here. `anc`
+/// answers ancestry on this checkout; `order` compares a review's commit with
+/// the requested one.
 pub fn read_request_states<'a>(
     world: &'a World,
     task_id: &str,
     anc: &mut impl AncestorSet,
+    order: &mut impl CommitOrder,
 ) -> Vec<ReadRequestState<'a>> {
     let reviews = world.reviews_for(task_id);
     let closes: Vec<&str> = world
@@ -50,7 +56,16 @@ pub fn read_request_states<'a>(
         .into_iter()
         .map(|request| {
             let asked = request.created.as_str();
-            let answered_by = reviews.iter().find(|r| r.created.as_str() > asked).copied();
+            let answered_by = reviews
+                .iter()
+                .find(|r| {
+                    r.created.as_str() > asked
+                        && matches!(
+                            order.is_ancestor(&request.commit, &r.commit),
+                            Ancestry::Yes | Ancestry::Rewritten
+                        )
+                })
+                .copied();
             let until = answered_by.map(|r| r.created.as_str());
             let closed_before_read = closes
                 .iter()
@@ -68,7 +83,12 @@ pub fn read_request_states<'a>(
 mod tests {
     use super::*;
     use crate::entities::*;
-    use crate::resolve::MapAncestors;
+    use crate::resolve::{MapAncestors, MapOrder};
+
+    /// a <- b, with requests made at a.
+    fn line() -> MapOrder {
+        MapOrder::of([("a", &[]), ("b", &["a"]), ("z", &[])])
+    }
 
     fn request(dev: &str, worktree: &str, at: &str) -> ReadRequest {
         ReadRequest {
@@ -148,7 +168,7 @@ mod tests {
             ],
             &[],
         );
-        let states = read_request_states(&w, "t1", &mut MapAncestors::of([]));
+        let states = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
         assert_eq!(states.len(), 1);
         assert_eq!(states[0].answered_by.map(|r| &*r.id.0), Some("r1"));
         assert!(!states[0].is_open());
@@ -157,7 +177,7 @@ mod tests {
     #[test]
     fn unanswered_request_is_open() {
         let w = world(&[request("x", "/one", "2026-07-02T00:00:00Z")], &[], &[]);
-        let states = read_request_states(&w, "t1", &mut MapAncestors::of([]));
+        let states = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
         assert!(states[0].is_open());
         assert!(!states[0].closed_before_read);
     }
@@ -168,10 +188,10 @@ mod tests {
         let closes = [close("c1", Some("b"), "2026-07-03T00:00:00Z")];
         let w = world(&req, &[review("r1", "2026-07-04T00:00:00Z")], &closes);
         // The close applies here (b is an ancestor) and came before the read.
-        let s = read_request_states(&w, "t1", &mut MapAncestors::of(["b"]));
+        let s = read_request_states(&w, "t1", &mut MapAncestors::of(["b"]), &mut line());
         assert!(s[0].closed_before_read);
         // On a checkout without b, the close doesn't apply.
-        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]));
+        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
         assert!(!s[0].closed_before_read);
     }
 
@@ -183,7 +203,7 @@ mod tests {
             close("c2", None, "2026-07-05T00:00:00Z"),
         ];
         let w = world(&req, &[review("r1", "2026-07-04T00:00:00Z")], &closes);
-        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]));
+        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
         assert!(!s[0].closed_before_read);
     }
 
@@ -204,6 +224,66 @@ mod tests {
                 event: del,
             },
         ]);
-        assert!(read_request_states(&w, "t1", &mut MapAncestors::of([])).is_empty());
+        assert!(read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line()).is_empty());
+    }
+
+    fn review_at(id: &str, commit: &str, at: &str) -> Review {
+        Review {
+            commit: commit.into(),
+            ..review(id, at)
+        }
+    }
+
+    #[test]
+    fn only_a_review_of_the_requested_commit_or_later_answers() {
+        // Requested at b; a review of the older a doesn't answer, a later
+        // review of b does.
+        let mut req = request("x", "/one", "2026-07-02T00:00:00Z");
+        req.commit = "b".into();
+        let w = world(
+            &[req],
+            &[
+                review_at("r1", "a", "2026-07-03T00:00:00Z"),
+                review_at("r2", "b", "2026-07-04T00:00:00Z"),
+            ],
+            &[],
+        );
+        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
+        assert_eq!(s[0].answered_by.map(|r| &*r.id.0), Some("r2"));
+        // Without r2, the request stays open.
+        let w2 = World {
+            reviews: w.reviews[..1].to_vec(),
+            read_requests: w.read_requests.clone(),
+            ..Default::default()
+        };
+        let s = read_request_states(&w2, "t1", &mut MapAncestors::of([]), &mut line());
+        assert!(s[0].is_open());
+    }
+
+    #[test]
+    fn a_review_of_a_descendant_answers() {
+        // Requested at a, read at its descendant b.
+        let w = world(
+            &[request("x", "/one", "2026-07-02T00:00:00Z")],
+            &[review_at("r1", "b", "2026-07-03T00:00:00Z")],
+            &[],
+        );
+        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
+        assert!(!s[0].is_open());
+    }
+
+    #[test]
+    fn unknown_order_leaves_the_request_open() {
+        // `y` isn't in the commit graph, and `z` is unrelated to `a`.
+        let w = world(
+            &[request("x", "/one", "2026-07-02T00:00:00Z")],
+            &[
+                review_at("r1", "y", "2026-07-03T00:00:00Z"),
+                review_at("r2", "z", "2026-07-04T00:00:00Z"),
+            ],
+            &[],
+        );
+        let s = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
+        assert!(s[0].is_open());
     }
 }

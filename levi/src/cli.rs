@@ -169,8 +169,9 @@ pub enum Cmd {
         note: String,
     },
     /// Ask for a read of a task at a commit (HEAD by default) before it's
-    /// merged. Open until someone verifies or sends it back; while it's open,
-    /// `check-claims --require-review` fails. Asking again replaces it.
+    /// merged. Open until someone verifies or sends it back at that commit or
+    /// a descendant, after the request; while it's open, `check-claims
+    /// --require-review` fails. Asking again replaces it.
     RequestRead {
         id: String,
         /// The commit to read. Defaults to HEAD.

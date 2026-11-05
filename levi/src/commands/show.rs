@@ -67,28 +67,32 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         .collect();
     let review = crate::output::review_summary(&ctx.world, &task_id, &mut anc);
     // Read requests that haven't been withdrawn, and whether each is answered.
-    let read_requests: Vec<_> =
-        levi_core::reads::read_request_states(&ctx.world, &task_id, &mut anc)
-            .into_iter()
-            .map(|st| {
-                json!({
-                    "commit": st.request.commit,
-                    "by": st.request.by_dev,
-                    "machine": st.request.by_machine,
-                    "worktree": st.request.by_worktree,
-                    "at": st.request.created,
-                    "open": st.is_open(),
-                    "answered_by": st.answered_by.map(|r| json!({
-                        "verdict": r.verdict.label(),
-                        "commit": r.commit,
-                        "by": r.by_dev,
-                        "at": r.created,
-                    })),
-                    "closed_before_read": st.closed_before_read,
-                    "source": "declared",
-                })
-            })
-            .collect();
+    let read_requests: Vec<_> = levi_core::reads::read_request_states(
+        &ctx.world,
+        &task_id,
+        &mut anc,
+        &mut crate::ancestors::GixOrder::new(ctx.store.repo(), ctx.config.patch_id_window),
+    )
+    .into_iter()
+    .map(|st| {
+        json!({
+            "commit": st.request.commit,
+            "by": st.request.by_dev,
+            "machine": st.request.by_machine,
+            "worktree": st.request.by_worktree,
+            "at": st.request.created,
+            "open": st.is_open(),
+            "answered_by": st.answered_by.map(|r| json!({
+                "verdict": r.verdict.label(),
+                "commit": r.commit,
+                "by": r.by_dev,
+                "at": r.created,
+            })),
+            "closed_before_read": st.closed_before_read,
+            "source": "declared",
+        })
+    })
+    .collect();
 
     let comments: Vec<_> = ctx
         .world
