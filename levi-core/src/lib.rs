@@ -1,5 +1,6 @@
 pub mod crossproject;
 pub mod entities;
+pub mod gate;
 pub mod graph;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod hub;
