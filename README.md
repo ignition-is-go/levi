@@ -33,6 +33,8 @@ levi close lv-3f2a                   # anchored at HEAD: closed only where
 levi ls --json                       # stable schemas on every read command
 levi show lv-3f2a                    # detail: deps, claim, comments, history
 levi check-claims --git-ref feature  # CI: fail if its claimed tasks are open at HEAD
+levi check-events                    # print refs/levi/events' head, to save elsewhere
+levi check-events --expect SHA       # fail if that saved head left the ref's history
 ```
 
 Anchoring: `levi close ID` anchors at HEAD; `--anchor SHA` overrides;
@@ -54,6 +56,15 @@ ever claimed by that branch is closed in the tested HEAD ancestry. Use
 CI must fetch the custom event ref first, for example
 `git fetch origin +refs/levi/events:refs/levi/events` (or run `levi sync`).
 Ref identity is exact: renaming a branch does not transfer its old obligations.
+
+Events are only ever added and merged by union, so a head of `refs/levi/events`
+stays in the ref's history from then on. `levi check-events` prints the current
+head; save it somewhere the ref's writers can't reach. Later,
+`levi check-events --expect SHA` exits non-zero unless that commit is still the
+head or one of its ancestors, so a ref that was reset or rewritten shows. It
+reads the local ref without syncing, and `--json` gives `levi.check-events/1`.
+It can't catch events added as someone else: anyone who can push the ref can
+write any event.
 
 ## GitHub Action
 
