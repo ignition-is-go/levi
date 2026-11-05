@@ -39,6 +39,34 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         })
         .collect();
 
+    // Each review, and whether its commit is in this checkout's ancestry.
+    // Who reviewed is declared, like every levi identity.
+    let reviews: Vec<_> = ctx
+        .world
+        .reviews_for(&task_id)
+        .into_iter()
+        .map(|r| {
+            let applies = match anc.contains(&r.commit) {
+                Ancestry::Yes | Ancestry::Rewritten => "yes",
+                Ancestry::No => "no",
+                Ancestry::Unknown => "unknown",
+            };
+            json!({
+                "verdict": r.verdict.label(),
+                "commit": r.commit,
+                "note": r.note,
+                "by": r.by_dev,
+                "machine": r.by_machine,
+                "worktree": r.by_worktree,
+                "at": r.created,
+                "applies_here": applies,
+                "source": "declared",
+                "self_review_warning": r.self_review_warning,
+            })
+        })
+        .collect();
+    let review = crate::output::review_summary(&ctx.world, &task_id, &mut anc);
+
     let comments: Vec<_> = ctx
         .world
         .comments
@@ -110,27 +138,27 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
 
     let claim = claim_json(&ctx.world, &task_id, now);
     if json {
-        println!(
-            "{}",
-            json!({
-                "schema": SCHEMA_SHOW,
-                "id": task_id,
-                "short": short_id(&ctx.world, &task_id),
-                "title": task.title,
-                "body": task.body,
-                "status": resolved.status.label(),
-                "resolution": resolved.resolution.label(),
-                "priority": task.priority.label(),
-                "labels": task.labels,
-                "created_at": task.created,
-                "created_by": task.created_by_dev,
-                "claim": claim,
-                "blocked_by": blocked_by,
-                "blocks": blocks,
-                "comments": comments,
-                "history": history,
-            })
-        );
+        let mut out = json!({
+            "schema": SCHEMA_SHOW,
+            "id": task_id,
+            "short": short_id(&ctx.world, &task_id),
+            "title": task.title,
+            "body": task.body,
+            "status": resolved.status.label(),
+            "resolution": resolved.resolution.label(),
+            "priority": task.priority.label(),
+            "labels": task.labels,
+            "created_at": task.created,
+            "created_by": task.created_by_dev,
+            "claim": claim,
+            "blocked_by": blocked_by,
+            "blocks": blocks,
+            "comments": comments,
+            "history": history,
+            "reviews": reviews,
+        });
+        crate::output::add_review_fields(&mut out, &review);
+        println!("{out}");
         return Ok(());
     }
 
@@ -193,6 +221,38 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 h["by"].as_str().unwrap_or_default(),
                 h["at"].as_str().unwrap_or_default(),
                 h["applies_here"].as_str().unwrap_or_default(),
+            );
+        }
+    }
+    if !reviews.is_empty() {
+        println!("reviews (declared):");
+        for r in &reviews {
+            let commit = r["commit"].as_str().unwrap_or_default();
+            let note = r["note"].as_str().unwrap_or_default();
+            println!(
+                "  {} by {} at {} @ {} (applies here: {}){}{}",
+                r["verdict"].as_str().unwrap_or_default(),
+                r["by"].as_str().unwrap_or_default(),
+                r["at"].as_str().unwrap_or_default(),
+                &commit[..commit.len().min(8)],
+                r["applies_here"].as_str().unwrap_or_default(),
+                if note.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {note}")
+                },
+                if r["self_review_warning"] == true {
+                    "  ⚠ same dev and machine as the closer"
+                } else {
+                    ""
+                },
+            );
+        }
+        if let Some(d) = &review.differs {
+            println!(
+                "  verified at {} but closed here at {} (observed)",
+                &d.verified[..d.verified.len().min(8)],
+                &d.closed[..d.closed.len().min(8)]
             );
         }
     }

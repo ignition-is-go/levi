@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result, bail};
+use levi_core::gate::review_gate;
 use levi_core::ids::short_id;
 use levi_core::resolve::{Resolution, Status};
 use serde_json::json;
@@ -19,6 +20,7 @@ pub fn run(
     ctx: &LeviCtx,
     git_ref: Option<String>,
     at: Option<String>,
+    require_review: bool,
     json_output: bool,
 ) -> Result<()> {
     ctx.project_id()?;
@@ -56,18 +58,36 @@ pub fn run(
             continue;
         };
         let status = &statuses[task_id];
-        if status.status != Status::Closed || status.resolution == Resolution::Partial {
+        let gate = review_gate(&ctx.world, task_id, &mut anc, Resolution::Exact);
+        let closed = status.status == Status::Closed && status.resolution != Resolution::Partial;
+        if !closed || (require_review && !gate.passes()) {
             open.push(task_id.to_string());
         }
-        tasks.push(json!({
+        let mut entry = json!({
             "id": task_id,
             "short": short_id(&ctx.world, task_id),
             "title": task.title,
             "status": status.status.label(),
             "resolution": status.resolution.label(),
-        }));
+            "open_reads": gate.open_reads,
+        });
+        crate::output::add_review_fields(
+            &mut entry,
+            &crate::output::ReviewSummary {
+                state: gate.review,
+                resolution: gate.resolution,
+                differs: gate.differs,
+                note: None,
+            },
+        );
+        tasks.push(entry);
     }
 
+    let what = if require_review {
+        "closed and verified"
+    } else {
+        "closed"
+    };
     if json_output {
         println!(
             "{}",
@@ -81,23 +101,24 @@ pub fn run(
         );
     } else if open.is_empty() {
         println!(
-            "all {} task(s) claimed by {git_ref} are closed at {}",
+            "all {} task(s) claimed by {git_ref} are {what} at {}",
             tasks.len(),
             &tested_commit[..8]
         );
     } else {
         eprintln!(
-            "tasks claimed by {git_ref} that are not closed at {}:",
+            "tasks claimed by {git_ref} that are not {what} at {}:",
             &tested_commit[..8]
         );
         for task in tasks
             .iter()
-            .filter(|task| task["status"] != "closed" || task["resolution"] == "partial")
+            .filter(|task| open.iter().any(|id| task["id"] == id.as_str()))
         {
             eprintln!(
-                "  {} {:<7} {}",
+                "  {} {:<7} {:<9} {}",
                 task["short"].as_str().unwrap_or("lv-????"),
                 task["status"].as_str().unwrap_or("unknown"),
+                task["review"].as_str().unwrap_or("none"),
                 task["title"].as_str().unwrap_or("<unknown task>")
             );
         }
@@ -105,7 +126,7 @@ pub fn run(
 
     if !open.is_empty() {
         bail!(
-            "{} task(s) claimed by {git_ref} are not closed at {}",
+            "{} task(s) claimed by {git_ref} are not {what} at {}",
             open.len(),
             &tested_commit[..8]
         );
