@@ -1,5 +1,6 @@
 pub mod add;
 pub mod check_claims;
+pub mod check_events;
 pub mod claim_ops;
 pub mod comment;
 pub mod dep;
