@@ -97,6 +97,19 @@ That verification must have read the commit the task closed at, or a later
 one. A verification of an older commit fails the gate too, since the commits
 between were never read: `check-claims --json` reports it as `stale_review`.
 
+## Blockers that aren't tasks
+
+```sh
+levi block lv-3f2a -m "waiting on the operator to open port 6300"   # → bk-1a2b3c4d
+levi unblock bk-1a2b3c4d -m "the operator opened it"
+```
+
+`dep add` covers a task waiting on another task. `block` covers anything
+else. A task with an open blocker isn't eligible for `next`. `ls --json` lists
+each task's open blockers, and `show` lists all of them, with who closed each
+one and why. Anyone can close a blocker, and the log keeps both events. What a
+blocker says is declared by whoever wrote it.
+
 ## GitHub Action
 
 Levi publishes a colocated composite action backed by checksum-verified native

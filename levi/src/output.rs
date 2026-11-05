@@ -163,3 +163,31 @@ pub fn review_marker(summary: &ReviewSummary) -> &'static str {
         (ReviewState::None, _) => "",
     }
 }
+
+/// A blocker as JSON. What it says is declared by whoever opened or closed it.
+pub fn blocker_json(b: &levi_core::Blocker) -> Value {
+    json!({
+        "id": b.id.0,
+        "short": crate::commands::blocker::blocker_short(&b.id.0),
+        "reason": b.reason,
+        "by": b.by_dev,
+        "machine": b.by_machine,
+        "at": b.created,
+        "open": b.is_open(),
+        "closed_by": b.closed_by,
+        "closed_reason": b.closed_reason,
+        "closed_at": b.closed_at,
+        "source": "declared",
+    })
+}
+
+/// A task's open blockers, oldest first, as JSON.
+pub fn open_blockers_json(world: &World, task_id: &str) -> Value {
+    Value::Array(
+        world
+            .open_blockers_for(task_id)
+            .into_iter()
+            .map(blocker_json)
+            .collect(),
+    )
+}

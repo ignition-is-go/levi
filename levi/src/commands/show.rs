@@ -66,6 +66,19 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         })
         .collect();
     let review = crate::output::review_summary(&ctx.world, &task_id, &mut anc);
+    // Every non-task blocker on the task, open and closed, oldest first.
+    let mut task_blockers: Vec<&levi_core::Blocker> = ctx
+        .world
+        .blockers
+        .values()
+        .filter(|b| *b.task_id == task_id)
+        .collect();
+    task_blockers
+        .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
+    let blockers: Vec<_> = task_blockers
+        .into_iter()
+        .map(crate::output::blocker_json)
+        .collect();
     // Read requests that haven't been withdrawn, and whether each is answered.
     let read_requests: Vec<_> = levi_core::reads::read_request_states(
         &ctx.world,
@@ -184,6 +197,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
             "history": history,
             "reviews": reviews,
             "read_requests": read_requests,
+            "blockers": blockers,
         });
         crate::output::add_review_fields(&mut out, &review);
         println!("{out}");
@@ -281,6 +295,28 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 "  verified at {} but closed here at {} (observed)",
                 &d.verified[..d.verified.len().min(8)],
                 &d.closed[..d.closed.len().min(8)]
+            );
+        }
+    }
+    if !blockers.is_empty() {
+        println!("waiting on (declared):");
+        for b in &blockers {
+            let state = if b["open"] == true {
+                "open".to_string()
+            } else {
+                format!(
+                    "closed by {} at {}: {}",
+                    b["closed_by"].as_str().unwrap_or_default(),
+                    b["closed_at"].as_str().unwrap_or_default(),
+                    b["closed_reason"].as_str().unwrap_or_default()
+                )
+            };
+            println!(
+                "  {} {} (by {} at {}; {state})",
+                b["short"].as_str().unwrap_or_default(),
+                b["reason"].as_str().unwrap_or_default(),
+                b["by"].as_str().unwrap_or_default(),
+                b["at"].as_str().unwrap_or_default(),
             );
         }
     }

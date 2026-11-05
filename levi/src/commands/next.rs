@@ -70,6 +70,9 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
             if blocked_by_open_blocker {
                 return false;
             }
+            if !world.open_blockers_for(&task_id).is_empty() {
+                return false;
+            }
             match world.live_claim(&task_id, now) {
                 None => true,
                 Some(c) => levi_core::rank::claim_is(c, &me),

@@ -168,6 +168,22 @@ pub enum Cmd {
         #[arg(short = 'm', long = "message", default_value = "")]
         note: String,
     },
+    /// Say what a task is waiting on when it isn't another task (for
+    /// that, use `dep add`). The task isn't eligible for `next` until the
+    /// blocker is closed. Prints the blocker's id.
+    Block {
+        id: String,
+        /// What it's waiting on.
+        #[arg(short = 'm', long = "message")]
+        reason: String,
+    },
+    /// Close a blocker (by its `bk-` id), saying why it no longer blocks.
+    Unblock {
+        blocker: String,
+        /// Why it no longer blocks.
+        #[arg(short = 'm', long = "message")]
+        why: String,
+    },
     /// Ask for a read of a task at a commit (HEAD by default) before it's
     /// merged. Open until someone verifies or sends it back at that commit or
     /// a descendant, after the request; while it's open, `check-claims
