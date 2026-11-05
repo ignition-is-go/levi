@@ -17,7 +17,8 @@ pub struct ReviewGate {
     /// order against the close. `Partial` fails the gate: what can't be
     /// placed is never silently counted.
     pub resolution: Resolution,
-    /// Read requests still waiting for an answer.
+    /// Read requests still waiting for an answer. An open one fails the
+    /// gate: a requested read is answered before the merge.
     pub open_reads: usize,
     /// The counting verification read a commit strictly older than the one
     /// that closed the task, so the commits between were never reviewed. The
@@ -69,10 +70,10 @@ pub fn review_gate(
             Ancestry::Unknown => resolution = resolution.weaken(Resolution::Partial),
         }
     }
-    // TODO(RAL-47 feature 2): count open read requests once ReadRequest
-    // lands (reads::read_request_states(..).filter(is_open)), and add a test
-    // that an open request fails the gate. Until then there are none.
-    let open_reads = 0;
+    let open_reads = crate::reads::read_request_states(world, task_id, &mut *anc)
+        .iter()
+        .filter(|r| r.is_open())
+        .count();
     ReviewGate {
         review,
         resolution,
@@ -352,5 +353,56 @@ mod tests {
         );
         assert!(g.passes());
         assert!(g.self_review_warning);
+    }
+
+    #[test]
+    fn an_open_read_request_fails_and_a_later_review_answers_it() {
+        let req = ReadRequest {
+            id: read_request_id("t1", "q", "m", "/q").into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            commit: "a".into(),
+            by_dev: "q".into(),
+            by_machine: "m".into(),
+            by_machine_id: String::new(),
+            by_worktree: "/q".into(),
+            created: "2026-07-03T00:00:00Z".into(),
+        };
+        // Verified before the request was made: the request is still open.
+        let mut w = World {
+            reviews: vec![review(
+                "r1",
+                ReviewVerdict::Verified,
+                "a",
+                "2026-07-02T00:00:00Z",
+            )],
+            ..Default::default()
+        };
+        w.read_requests.insert(req.id.0.to_string(), req);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a"]),
+            &mut line(),
+            Resolution::Exact,
+        );
+        assert_eq!(g.open_reads, 1);
+        assert!(!g.passes());
+        // A verification after the request answers it.
+        w.reviews.push(review(
+            "r2",
+            ReviewVerdict::Verified,
+            "a",
+            "2026-07-04T00:00:00Z",
+        ));
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a"]),
+            &mut line(),
+            Resolution::Exact,
+        );
+        assert_eq!(g.open_reads, 0);
+        assert!(g.passes());
     }
 }
