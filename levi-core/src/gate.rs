@@ -5,8 +5,8 @@
 use crate::entities::ReviewVerdict;
 use crate::materialize::World;
 use crate::resolve::{
-    AncestorSet, Ancestry, CommitOrder, Resolution, ReviewDiffers, ReviewState, applying_reviews,
-    closing_anchor, review_differs, review_state,
+    AncestorSet, Ancestry, CommitOrder, Resolution, ReviewDiffers, ReviewState, closing_anchor,
+    placed_reviews, review_differs, review_state,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +20,14 @@ pub struct ReviewGate {
     /// Read requests still waiting for an answer. An open one fails the
     /// gate: a requested read is answered before the merge.
     pub open_reads: usize,
+    /// Reviews whose commit can't be placed here, for information. One newer
+    /// than every applying review makes the resolution `Partial`; older ones
+    /// don't affect the verdict (`resolve::placed_reviews`).
+    pub unplaced_reviews: usize,
+    /// Read requests whose commit can't be placed here, for information. Each
+    /// still fails the gate unless a later read settles it
+    /// (`reads::read_request_states`).
+    pub unplaced_reads: usize,
     /// The counting verification read a commit strictly older than the one
     /// that closed the task, so the commits between were never reviewed. The
     /// rule is a read at the head being merged. Fails the gate.
@@ -52,7 +60,8 @@ pub fn review_gate(
     base: Resolution,
 ) -> ReviewGate {
     let reviews = world.reviews_for(task_id);
-    let (applying, mut resolution) = applying_reviews(&reviews, &mut *anc, base);
+    let placed = placed_reviews(&reviews, &mut *anc, base);
+    let (applying, mut resolution) = (placed.applying, placed.resolution);
     let closed = closing_anchor(&world.changes_for(task_id), &mut *anc);
     let review = review_state(&applying);
     let counting = applying
@@ -60,7 +69,10 @@ pub fn review_gate(
         .map(|(r, _)| *r)
         .filter(|r| r.verdict == ReviewVerdict::Verified);
     // A verification counts only if it read the closing commit or a later
-    // one. An unanchored close has no commit to compare with.
+    // one. An unanchored close has no commit to compare with. Both commits
+    // apply here, so on a repository this is never `Unknown` because a commit
+    // is missing; it's `Unknown` only when facts can't answer, which stays
+    // `Partial`.
     let mut stale_review = false;
     if let (Some(verified), Some(closed)) = (counting, closed) {
         match order.is_ancestor(closed, &verified.commit) {
@@ -70,14 +82,15 @@ pub fn review_gate(
             Ancestry::Unknown => resolution = resolution.weaken(Resolution::Partial),
         }
     }
-    let open_reads = crate::reads::read_request_states(world, task_id, &mut *anc, &mut *order)
-        .iter()
-        .filter(|r| r.is_open())
-        .count();
+    let reads = crate::reads::read_request_states(world, task_id, &mut *anc, &mut *order);
+    let open_reads = reads.iter().filter(|r| r.is_open()).count();
+    let unplaced_reads = reads.iter().filter(|r| r.unplaced).count();
     ReviewGate {
         review,
         resolution,
         open_reads,
+        unplaced_reviews: placed.unplaced,
+        unplaced_reads,
         stale_review,
         self_review_warning: counting.is_some_and(|r| r.self_review_warning),
         differs: review_differs(closed, &applying),
@@ -404,5 +417,51 @@ mod tests {
         );
         assert_eq!(g.open_reads, 0);
         assert!(g.passes());
+    }
+
+    #[test]
+    fn an_unplaceable_review_before_a_fresh_verification_doesnt_fail_the_gate() {
+        // a <- b <- c, closed at b. The verification at x was of a commit a
+        // rebase left behind, which this clone doesn't have; a fresh one at c
+        // came after it. The fresh one decides, so the gate passes, and x is
+        // counted rather than dropped.
+        let mut w = World {
+            reviews: vec![
+                review("r1", ReviewVerdict::Verified, "x", "2026-07-02T00:00:00Z"),
+                review("r2", ReviewVerdict::Verified, "c", "2026-07-03T00:00:00Z"),
+            ],
+            ..Default::default()
+        };
+        closed_at(&mut w, "b");
+        let mut anc = PartialMapAncestors {
+            yes: ["a", "b", "c"].map(String::from).into(),
+            unknown: ["x".to_string()].into(),
+        };
+        let g = review_gate(&w, "t1", &mut anc, &mut line(), Resolution::Exact);
+        assert_eq!(g.unplaced_reviews, 1);
+        assert_eq!(g.resolution, Resolution::Exact);
+        assert!(g.passes());
+    }
+
+    #[test]
+    fn an_unplaceable_review_newer_than_every_applying_one_fails_the_gate() {
+        // The same, with the unplaceable review last: it might have been a
+        // send-back, so the gate can't pass on the older verification.
+        let mut w = World {
+            reviews: vec![
+                review("r1", ReviewVerdict::Verified, "c", "2026-07-02T00:00:00Z"),
+                review("r2", ReviewVerdict::Verified, "x", "2026-07-03T00:00:00Z"),
+            ],
+            ..Default::default()
+        };
+        closed_at(&mut w, "b");
+        let mut anc = PartialMapAncestors {
+            yes: ["a", "b", "c"].map(String::from).into(),
+            unknown: ["x".to_string()].into(),
+        };
+        let g = review_gate(&w, "t1", &mut anc, &mut line(), Resolution::Exact);
+        assert_eq!(g.unplaced_reviews, 1);
+        assert_eq!(g.resolution, Resolution::Partial);
+        assert!(!g.passes());
     }
 }

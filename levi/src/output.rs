@@ -114,6 +114,8 @@ pub struct ReviewSummary {
     pub differs: Option<levi_core::resolve::ReviewDiffers>,
     /// The newest applying review's note.
     pub note: Option<String>,
+    /// Reviews whose commit can't be placed here.
+    pub unplaced: usize,
 }
 
 pub fn review_summary(
@@ -122,16 +124,18 @@ pub fn review_summary(
     anc: &mut impl levi_core::resolve::AncestorSet,
 ) -> ReviewSummary {
     use levi_core::resolve::{
-        Resolution, applying_reviews, closing_anchor, review_differs, review_state,
+        Resolution, closing_anchor, placed_reviews, review_differs, review_state,
     };
     let reviews = world.reviews_for(task_id);
-    let (applying, resolution) = applying_reviews(&reviews, anc, Resolution::Exact);
+    let placed = placed_reviews(&reviews, anc, Resolution::Exact);
+    let (applying, resolution, unplaced) = (placed.applying, placed.resolution, placed.unplaced);
     let closed = closing_anchor(&world.changes_for(task_id), anc);
     ReviewSummary {
         state: review_state(&applying),
         resolution,
         differs: review_differs(closed, &applying),
         note: applying.last().map(|(r, _)| r.note.clone()),
+        unplaced,
     }
 }
 
@@ -147,6 +151,7 @@ pub fn add_review_fields(v: &mut Value, summary: &ReviewSummary) {
         _ => json!("declared"),
     };
     v["review_resolution"] = json!(summary.resolution.label());
+    v["unplaced_reviews"] = json!(summary.unplaced);
     v["review_differs"] = match &summary.differs {
         Some(d) => json!({"verified": d.verified, "closed": d.closed, "source": "observed"}),
         None => Value::Null,

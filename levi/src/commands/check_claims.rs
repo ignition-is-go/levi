@@ -71,6 +71,10 @@ pub fn run(
             "status": status.status.label(),
             "resolution": status.resolution.label(),
             "open_reads": gate.open_reads,
+            // Read requests whose commit can't be placed here, say after a
+            // rebase: counted, never silently dropped. `unplaced_reviews`
+            // comes with the review fields below.
+            "unplaced_reads": gate.unplaced_reads,
             // The verification read a commit older than the close: the
             // commits between were never reviewed. Fails the gate.
             "stale_review": gate.stale_review,
@@ -85,6 +89,7 @@ pub fn run(
                 resolution: gate.resolution,
                 differs: gate.differs,
                 note: None,
+                unplaced: gate.unplaced_reviews,
             },
         );
         tasks.push(entry);

@@ -97,6 +97,13 @@ That verification must have read the commit the task closed at, or a later
 one. A verification of an older commit fails the gate too, since the commits
 between were never read: `check-claims --json` reports it as `stale_review`.
 
+After a rebase, a review or read request can name a commit the tested clone
+doesn't have. Such a review only counts against the gate if it's newer than
+every review that applies; a fresh verification after it decides. Such a
+request stays open until a review made after it, at a commit that applies here
+and at or after the close, settles it. Both are counted, as `unplaced_reviews`
+and `unplaced_reads`, never silently dropped.
+
 ## Blockers that aren't tasks
 
 ```sh

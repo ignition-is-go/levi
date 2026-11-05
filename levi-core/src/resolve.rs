@@ -157,27 +157,71 @@ pub fn closing_anchor<'a>(
 /// Reviews whose commit is an ancestor of HEAD, in the order given (which
 /// must be (at, id), as `World::reviews_for` returns), each with how its
 /// ancestry was answered. Graded like `effective_status`: a patch-id match
-/// applies and weakens to `Squashed`; an unknown commit is skipped and
-/// weakens to `Partial`, so a review is never silently applied or dropped.
+/// applies and weakens to `Squashed`. See `placed_reviews` for reviews whose
+/// commit can't be placed.
 pub fn applying_reviews<'a>(
     reviews: &[&'a Review],
     anc: &mut impl AncestorSet,
     base: Resolution,
 ) -> (Vec<(&'a Review, Ancestry)>, Resolution) {
+    let placed = placed_reviews(reviews, anc, base);
+    (placed.applying, placed.resolution)
+}
+
+/// What `placed_reviews` found.
+#[derive(Debug, Clone)]
+pub struct PlacedReviews<'a> {
+    /// The applying reviews, oldest first, with how each was placed.
+    pub applying: Vec<(&'a Review, Ancestry)>,
+    pub resolution: Resolution,
+    /// Reviews whose commit couldn't be placed here, such as a commit that a
+    /// rebase left behind and that this clone never fetched.
+    pub unplaced: usize,
+}
+
+/// As `applying_reviews`, counting the reviews that can't be placed. The
+/// newest applying review decides, so an unplaceable review only matters if
+/// it's newer than every applying one: then it might have been the deciding
+/// review, and the resolution weakens to `Partial`. An unplaceable review
+/// with an applying review after it couldn't have decided, so it doesn't
+/// weaken anything; a fresh read after a rebase settles the task. Either way
+/// it's counted in `unplaced`, never silently dropped.
+pub fn placed_reviews<'a>(
+    reviews: &[&'a Review],
+    anc: &mut impl AncestorSet,
+    base: Resolution,
+) -> PlacedReviews<'a> {
     let mut applying = Vec::new();
     let mut resolution = base;
+    let mut unplaced = 0;
+    // An unplaceable review with no applying review after it yet.
+    let mut pending = false;
     for review in reviews {
         match anc.contains(&review.commit) {
-            a @ Ancestry::Yes => applying.push((*review, a)),
+            a @ Ancestry::Yes => {
+                pending = false;
+                applying.push((*review, a));
+            }
             a @ Ancestry::Rewritten => {
+                pending = false;
                 resolution = resolution.weaken(Resolution::Squashed);
                 applying.push((*review, a));
             }
             Ancestry::No => {}
-            Ancestry::Unknown => resolution = resolution.weaken(Resolution::Partial),
+            Ancestry::Unknown => {
+                unplaced += 1;
+                pending = true;
+            }
         }
     }
-    (applying, resolution)
+    if pending {
+        resolution = resolution.weaken(Resolution::Partial);
+    }
+    PlacedReviews {
+        applying,
+        resolution,
+        unplaced,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

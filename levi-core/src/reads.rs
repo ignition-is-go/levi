@@ -3,7 +3,7 @@
 
 use crate::entities::{ReadRequest, Review, StatusKind};
 use crate::materialize::World;
-use crate::resolve::{AncestorSet, Ancestry, CommitOrder};
+use crate::resolve::{AncestorSet, Ancestry, CommitOrder, closing_anchor};
 
 #[derive(Debug, Clone)]
 pub struct ReadRequestState<'a> {
@@ -14,6 +14,16 @@ pub struct ReadRequestState<'a> {
     /// doesn't answer it. A review answers wherever it was made; its commit
     /// needn't apply on this checkout.
     pub answered_by: Option<&'a Review>,
+    /// The requested commit can't be placed here, such as a commit a rebase
+    /// left behind that this clone never fetched, so no review can be shown
+    /// to have read it or a descendant.
+    pub unplaced: bool,
+    /// For an unplaced request that no review answers: the first review made
+    /// after the request, by anyone, whose commit applies here and is at or
+    /// after the commit the task closed at here. It settles the request,
+    /// since it read everything being merged. Without one, the request stays
+    /// open.
+    pub settled_by: Option<&'a Review>,
     /// A close that applies on this checkout was made while the request was
     /// open, so it merged before anyone read it. Worked out from the log and git.
     pub closed_before_read: bool,
@@ -21,7 +31,7 @@ pub struct ReadRequestState<'a> {
 
 impl ReadRequestState<'_> {
     pub fn is_open(&self) -> bool {
-        self.answered_by.is_none()
+        self.answered_by.is_none() && self.settled_by.is_none()
     }
 }
 
@@ -46,6 +56,7 @@ pub fn read_request_states<'a>(
         })
         .map(|c| c.created.as_str())
         .collect();
+    let closed_at = closing_anchor(&world.changes_for(task_id), &mut *anc).map(str::to_string);
     let mut requests: Vec<&ReadRequest> = world
         .read_requests
         .values()
@@ -66,13 +77,36 @@ pub fn read_request_states<'a>(
                         )
                 })
                 .copied();
-            let until = answered_by.map(|r| r.created.as_str());
+            let unplaced = matches!(anc.contains(&request.commit), Ancestry::Unknown);
+            let settled_by = if unplaced && answered_by.is_none() {
+                reviews
+                    .iter()
+                    .find(|r| {
+                        r.created.as_str() > asked
+                            && matches!(
+                                anc.contains(&r.commit),
+                                Ancestry::Yes | Ancestry::Rewritten
+                            )
+                            && closed_at.as_deref().is_none_or(|closed| {
+                                matches!(
+                                    order.is_ancestor(closed, &r.commit),
+                                    Ancestry::Yes | Ancestry::Rewritten
+                                )
+                            })
+                    })
+                    .copied()
+            } else {
+                None
+            };
+            let until = answered_by.or(settled_by).map(|r| r.created.as_str());
             let closed_before_read = closes
                 .iter()
                 .any(|&at| at > asked && until.is_none_or(|u| at < u));
             ReadRequestState {
                 request,
                 answered_by,
+                unplaced,
+                settled_by,
                 closed_before_read,
             }
         })
@@ -285,5 +319,70 @@ mod tests {
         );
         let s = read_request_states(&w, "t1", &mut MapAncestors::of([]), &mut line());
         assert!(s[0].is_open());
+    }
+
+    /// A request at `x`, a commit this clone doesn't have, on a task closed
+    /// at `a` here, with one later review at `review_at`.
+    fn unplaced_request(review_at: Option<&str>) -> World {
+        let mut asked = request("q", "/q", "2026-07-01T00:00:00Z");
+        asked.commit = "x".into();
+        let reviews: Vec<Review> = review_at
+            .map(|c| {
+                let mut r = review("r1", "2026-07-03T00:00:00Z");
+                r.commit = c.into();
+                r
+            })
+            .into_iter()
+            .collect();
+        world(
+            &[asked],
+            &reviews,
+            &[close("c1", Some("a"), "2026-07-02T00:00:00Z")],
+        )
+    }
+
+    fn here() -> crate::resolve::PartialMapAncestors {
+        crate::resolve::PartialMapAncestors {
+            yes: ["a", "b"].map(String::from).into(),
+            unknown: ["x".to_string()].into(),
+        }
+    }
+
+    #[test]
+    fn an_unplaced_request_is_settled_by_a_later_read_at_or_after_the_close() {
+        let w = unplaced_request(Some("b"));
+        let s = read_request_states(&w, "t1", &mut here(), &mut line());
+        assert!(s[0].unplaced);
+        assert!(s[0].answered_by.is_none(), "x can't be shown to be read");
+        assert_eq!(s[0].settled_by.map(|r| &*r.id.0), Some("r1"));
+        assert!(!s[0].is_open());
+        // The close came while the request was open, before the read.
+        assert!(s[0].closed_before_read);
+    }
+
+    #[test]
+    fn an_unplaced_request_with_no_later_read_at_or_after_the_close_stays_open() {
+        // No review at all.
+        let w = unplaced_request(None);
+        let s = read_request_states(&w, "t1", &mut here(), &mut line());
+        assert!(s[0].unplaced && s[0].is_open());
+        // A review at z, which doesn't apply here.
+        let w = unplaced_request(Some("z"));
+        let s = read_request_states(&w, "t1", &mut here(), &mut line());
+        assert!(s[0].is_open());
+    }
+
+    #[test]
+    fn a_read_older_than_the_close_doesnt_settle_an_unplaced_request() {
+        // Closed at b; the later review read a, before the close.
+        let mut asked = request("q", "/q", "2026-07-01T00:00:00Z");
+        asked.commit = "x".into();
+        let w = world(
+            &[asked],
+            &[review("r1", "2026-07-03T00:00:00Z")],
+            &[close("c1", Some("b"), "2026-07-02T00:00:00Z")],
+        );
+        let s = read_request_states(&w, "t1", &mut here(), &mut line());
+        assert!(s[0].unplaced && s[0].is_open());
     }
 }

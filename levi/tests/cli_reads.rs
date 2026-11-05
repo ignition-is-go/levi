@@ -187,3 +187,84 @@ fn a_review_of_an_older_commit_does_not_answer_a_request() {
     assert_eq!(reqs[0]["open"], false);
     assert_eq!(reqs[0]["answered_by"]["commit"], newer.as_str());
 }
+
+/// A request at a commit that never reached the clone CI runs in can't be
+/// placed there. It holds the gate until a read after it, at or after the
+/// close, settles it; it's reported as unplaced, not silently dropped.
+#[test]
+fn a_request_at_a_commit_this_clone_lacks_is_settled_by_a_later_read() {
+    let base = TestRepo::new();
+    let bare = base.path().join("origin.git");
+    base.git(&["init", "-q", "-b", "main", "--bare", bare.to_str().unwrap()]);
+    base.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+    base.git(&["push", "-q", "origin", "main"]);
+    let (a, ci) = (base.path().join("clone-a"), base.path().join("clone-ci"));
+    for clone in [&a, &ci] {
+        base.git(&[
+            "clone",
+            "-q",
+            bare.to_str().unwrap(),
+            clone.to_str().unwrap(),
+        ]);
+        base.git_in(clone, &["config", "user.email", "agent@test"]);
+        base.git_in(clone, &["config", "user.name", "Agent"]);
+    }
+    let sync = |dir: &Path| ok_in(&base, dir, &["sync", "--no-hub"]);
+
+    // On a: claim, fix, push the fix, close at it. Then ask for a read at a
+    // later commit that's never pushed.
+    ok_in(&base, &a, &["init"]);
+    let id = ok_in(&base, &a, &["add", "gated on a read", "--json"]);
+    let id: Value = serde_json::from_str(&id).unwrap();
+    let id = id["id"].as_str().unwrap().to_owned();
+    ok_in(&base, &a, &["start", &id]);
+    base.git_in(&a, &["commit", "-q", "--allow-empty", "-m", "the fix"]);
+    base.git_in(&a, &["push", "-q", "origin", "main"]);
+    ok_in(&base, &a, &["close", &id]);
+    base.git_in(&a, &["commit", "-q", "--allow-empty", "-m", "local only"]);
+    ok_in(&base, &a, &["request-read", &id]);
+    sync(&a);
+
+    // CI has the fix and the events, not the local commit.
+    base.git_in(&ci, &["pull", "-q", "--ff-only"]);
+    sync(&ci);
+    let gate = |dir: &Path| {
+        let out = base
+            .levi_in(
+                dir.to_path_buf(),
+                &[
+                    "check-claims",
+                    "--git-ref",
+                    "main",
+                    "--require-review",
+                    "--json",
+                ],
+            )
+            .output()
+            .unwrap();
+        serde_json::from_slice::<Value>(&out.stdout).unwrap()
+    };
+    let before = gate(&ci);
+    assert_eq!(before["ok"], false);
+    assert_eq!(before["tasks"][0]["open_reads"], 1);
+    assert_eq!(before["tasks"][0]["unplaced_reads"], 1);
+
+    // A read at CI's head, after the request and at the close, settles it.
+    let head = base.git_in(&ci, &["rev-parse", "HEAD"]);
+    ok_in(&base, &ci, &["verify", &id, "--commit", head.trim()]);
+    let after = gate(&ci);
+    assert_eq!(after["ok"], true, "{after}");
+    assert_eq!(after["tasks"][0]["open_reads"], 0);
+    assert_eq!(after["tasks"][0]["unplaced_reads"], 1);
+    assert_eq!(after["tasks"][0]["unplaced_reviews"], 0);
+    let shown = base
+        .levi_in(ci.clone(), &["show", &id, "--json"])
+        .output()
+        .unwrap();
+    let shown: Value = serde_json::from_slice(&shown.stdout).unwrap();
+    let req = &shown["read_requests"][0];
+    assert_eq!(req["unplaced"], true);
+    assert_eq!(req["open"], false);
+    assert!(req["answered_by"].is_null());
+    assert_eq!(req["settled_by"]["commit"], head.trim());
+}

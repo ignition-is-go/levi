@@ -101,6 +101,13 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 "by": r.by_dev,
                 "at": r.created,
             })),
+            "unplaced": st.unplaced,
+            "settled_by": st.settled_by.map(|r| json!({
+                "verdict": r.verdict.label(),
+                "commit": r.commit,
+                "by": r.by_dev,
+                "at": r.created,
+            })),
             "closed_before_read": st.closed_before_read,
             "source": "declared",
         })
@@ -324,8 +331,16 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         println!("read requests (declared):");
         for r in &read_requests {
             let commit = r["commit"].as_str().unwrap_or_default();
-            let state = if r["open"] == true {
+            let state = if r["open"] == true && r["unplaced"] == true {
+                "open; its commit isn't here".to_string()
+            } else if r["open"] == true {
                 "open".to_string()
+            } else if r["answered_by"].is_null() {
+                format!(
+                    "its commit isn't here; settled by a later read: {} by {}",
+                    r["settled_by"]["verdict"].as_str().unwrap_or_default(),
+                    r["settled_by"]["by"].as_str().unwrap_or_default()
+                )
             } else {
                 format!(
                     "answered: {} by {}",
