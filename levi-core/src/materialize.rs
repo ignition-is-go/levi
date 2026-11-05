@@ -325,6 +325,7 @@ mod tests {
             by_machine: "m".into(),
             by_machine_id: String::new(),
             by_worktree: "/w".into(),
+            self_review_warning: false,
             created: at.into(),
         };
         let w = materialize(vec![
@@ -366,6 +367,7 @@ mod tests {
             by_machine: "m".into(),
             by_machine_id: "id".into(),
             by_worktree: "/w".into(),
+            self_review_warning: false,
             created: "2026-07-01T00:00:00Z".into(),
         };
         let mut event = MEvent::from_item(&review, MEventType::SET, "m");

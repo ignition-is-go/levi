@@ -216,6 +216,7 @@ async fn review_log_entry_unwraps_into_queryable_review() {
         by_machine: "m".into(),
         by_machine_id: "id".into(),
         by_worktree: "/r".into(),
+        self_review_warning: false,
         created: "2026-07-18T00:00:00.000000Z".into(),
     };
     let mut inner = MEvent::from_item(&review, MEventType::SET, "m");

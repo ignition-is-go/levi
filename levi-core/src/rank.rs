@@ -40,6 +40,18 @@ pub enum SelfReview {
     Claimant,
     /// The reviewer closed the task.
     Closer,
+    /// The reviewer matches the closer's (dev, machine), but the closer never
+    /// claimed the task, so there's no worktree to tell them apart. Warn,
+    /// don't refuse: a different session on the same host is a real second
+    /// read. Set `Review::self_review_warning`.
+    CloserHostOnly,
+}
+
+impl SelfReview {
+    /// Refuse the review, rather than warn about it.
+    pub fn refuses(self) -> bool {
+        !matches!(self, SelfReview::CloserHostOnly)
+    }
 }
 
 /// Would `reviewer` be reviewing their own work on `task_id`? Identity is
@@ -51,8 +63,8 @@ pub enum SelfReview {
 /// - **Closer:** the newest close. A StatusChange records no worktree, so the
 ///   closer's worktree comes from their claims on this task: the reviewer is
 ///   the closer if any claim by the closer's (dev, machine) was made from the
-///   reviewer's worktree. A closer who never claimed it is matched on
-///   (dev, machine) alone, which is stricter than it needs to be.
+///   reviewer's worktree. A closer who never claimed it can only be matched
+///   on (dev, machine), which gives `CloserHostOnly`, a warning.
 ///
 /// Levi's identity is declared, so this catches mistakes, not impostors.
 pub fn is_self_review(world: &World, task_id: &str, reviewer: &Identity) -> Option<SelfReview> {
@@ -80,7 +92,9 @@ pub fn is_self_review(world: &World, task_id: &str, reviewer: &Identity) -> Opti
         .iter()
         .filter(|c| c.dev == closer.by_dev && c.machine == closer.by_machine)
         .collect();
-    if closers_claims.is_empty() || closers_claims.iter().any(|c| claim_is(c, reviewer)) {
+    if closers_claims.is_empty() {
+        Some(SelfReview::CloserHostOnly)
+    } else if closers_claims.iter().any(|c| claim_is(c, reviewer)) {
         Some(SelfReview::Closer)
     } else {
         None
@@ -645,13 +659,13 @@ mod tests {
     }
 
     #[test]
-    fn self_review_closer_who_never_claimed_matches_on_dev_and_machine() {
+    fn self_review_closer_who_never_claimed_only_warns() {
         let (mut w, _) = world_with(&[("t1", Priority::P2, "2026-07-01T00:00:00Z")]);
         closed_by(&mut w, "t1", "x@laptop", "laptop");
-        assert_eq!(
-            is_self_review(&w, "t1", &who("x@laptop", "laptop", "/anywhere")),
-            Some(SelfReview::Closer)
-        );
+        let got = is_self_review(&w, "t1", &who("x@laptop", "laptop", "/anywhere"));
+        assert_eq!(got, Some(SelfReview::CloserHostOnly));
+        assert!(!got.unwrap().refuses());
+        assert!(SelfReview::Claimant.refuses() && SelfReview::Closer.refuses());
         assert_eq!(
             is_self_review(&w, "t1", &who("y@laptop", "laptop", "/anywhere")),
             None

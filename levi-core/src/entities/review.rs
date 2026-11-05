@@ -37,6 +37,12 @@ pub struct Review {
     #[serde(default)]
     pub by_machine_id: String,
     pub by_worktree: String,
+    /// The reviewer matched the task's closer on (dev, machine) only: the
+    /// closer never claimed the task, so their worktree is unknown. It's
+    /// allowed, since another session on the same host is a real second
+    /// read, but recorded. See `rank::is_self_review`.
+    #[serde(default)]
+    pub self_review_warning: bool,
     /// RFC3339
     pub created: String,
 }

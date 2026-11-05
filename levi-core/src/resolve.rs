@@ -710,6 +710,7 @@ mod tests {
             by_machine: "m".into(),
             by_machine_id: String::new(),
             by_worktree: "/r".into(),
+            self_review_warning: false,
             created: at.into(),
         }
     }
