@@ -251,3 +251,54 @@ async fn review_log_entry_unwraps_into_queryable_review() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn read_request_log_entry_unwraps_into_queryable_read_request() {
+    let hub = start_hub();
+    let client = MykoClient::new();
+    assert!(connect(&client, format!("ws://127.0.0.1:{}/myko", hub.port)).await);
+
+    // A ReadRequest rides a LogEntry like any other event, under the id
+    // read_request_id gives it, one per requester per task.
+    let task_id = "cafe1111cafe1111cafe1111cafe1111";
+    let id = levi_core::read_request_id(task_id, "q@e", "m", "/q");
+    let request = levi_core::ReadRequest {
+        id: id.clone().into(),
+        project_id: "projQ".into(),
+        task_id: task_id.into(),
+        commit: "89abcdef0123456789abcdef0123456789abcdef".into(),
+        by_dev: "q@e".into(),
+        by_machine: "m".into(),
+        by_machine_id: "id".into(),
+        by_worktree: "/q".into(),
+        created: "2026-07-18T00:00:00.000000Z".into(),
+    };
+    let mut inner = MEvent::from_item(&request, MEventType::SET, "m");
+    inner.created_at = request.created.clone().into();
+    let mut cbor = Vec::new();
+    ciborium::into_writer(&inner, &mut cbor).unwrap();
+    let entry = LogEntry::wrap(
+        "dddd000011112222dddd000011112222dddd0000",
+        "projQ",
+        &cbor,
+        &request.created,
+    );
+    let _ = client.send_event(MEvent::from_item(&entry, MEventType::SET, "test"));
+
+    let requests = client.watch_query(levi_core::GetAllReadRequests {});
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let got = requests.get();
+        if let Some(r) = got.iter().find(|r| *r.id.0 == *id) {
+            assert_eq!(r.task_id, task_id);
+            assert_eq!(r.commit, "89abcdef0123456789abcdef0123456789abcdef");
+            assert_eq!(r.by_worktree, "/q");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "read request never appeared via saga unwrap; got {got:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}

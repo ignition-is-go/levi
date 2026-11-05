@@ -40,6 +40,8 @@ pub struct World {
     pub ref_facts: BTreeMap<String, RefFact>,
     /// Sorted by (at, id).
     pub reviews: Vec<Review>,
+    /// Keyed by `read_request_id`; SET replaces, DEL withdraws.
+    pub read_requests: BTreeMap<String, ReadRequest>,
 }
 
 impl World {
@@ -111,6 +113,8 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
             apply(&mut w.ref_facts, ev);
         } else if t == Review::ENTITY_NAME_STATIC {
             apply(&mut reviews, ev);
+        } else if t == ReadRequest::ENTITY_NAME_STATIC {
+            apply(&mut w.read_requests, ev);
         }
         // Unknown item types are skipped: forward compatibility with newer levi.
     }

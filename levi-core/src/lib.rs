@@ -8,6 +8,7 @@ pub mod ids;
 pub mod materialize;
 pub mod merkle;
 pub mod rank;
+pub mod reads;
 pub mod resolve;
 
 pub use entities::*;
