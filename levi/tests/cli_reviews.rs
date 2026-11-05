@@ -265,17 +265,55 @@ fn check_claims_require_review_gates_on_a_verified_read() {
     assert_eq!(result["ok"], true);
     assert_eq!(result["tasks"][0]["review"], "verified");
     assert_eq!(result["tasks"][0]["review_source"], "declared");
+}
 
-    // A verification at a commit the tested revision doesn't contain
-    // doesn't count there.
-    repo.levi(&[
+#[test]
+fn require_review_fails_where_the_close_holds_but_the_read_does_not() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("read after the close", &[]);
+    let wt = reviewer_worktree(&repo, "reviewer");
+
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.levi_ok(&["start", &id]);
+    let fix = repo.commit("the fix");
+    repo.levi_ok(&["close", &id]);
+    let later = repo.commit("a follow-up, read by the reviewer");
+    ok_in(&repo, &wt, &["verify", &id, "--commit", &later]);
+
+    // At the fix the task is closed, but the read commit isn't in ancestry,
+    // so only the review condition fails.
+    let out = repo
+        .levi(&[
+            "check-claims",
+            "--git-ref",
+            "feature",
+            "--require-review",
+            "--at",
+            &fix,
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let result: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["tasks"][0]["status"], "closed");
+    assert_eq!(result["tasks"][0]["review"], "none");
+
+    // At the read commit both hold.
+    let result = repo.levi_json(&[
         "check-claims",
         "--git-ref",
         "feature",
         "--require-review",
         "--at",
-        "main",
-    ])
-    .assert()
-    .failure();
+        &later,
+        "--json",
+    ]);
+    assert_eq!(result["ok"], true);
+    assert_eq!(
+        result["tasks"][0]["review_differs"]["verified"],
+        later.as_str()
+    );
+    assert_eq!(result["tasks"][0]["review_differs"]["closed"], fix.as_str());
 }
