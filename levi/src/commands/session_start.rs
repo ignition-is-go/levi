@@ -220,18 +220,30 @@ fn is_invisible(c: char) -> bool {
         | '\u{E0000}'..='\u{E007F}')
 }
 
-/// Cut a line to [`MAX_LINE_BYTES`], on a character boundary.
-fn fit(mut line: String) -> String {
-    let ellipsis = '…'.len_utf8();
-    if line.len() > MAX_LINE_BYTES {
-        let mut end = MAX_LINE_BYTES - ellipsis;
-        while !line.is_char_boundary(end) {
-            end -= 1;
-        }
-        line.truncate(end);
-        line.push('…');
+/// Cut cleaned text to at most `max` bytes, ellipsis included, on a
+/// character boundary and never inside an escape such as `&quot;`.
+fn fit_to(mut text: String, max: usize) -> String {
+    if text.len() <= max {
+        return text;
     }
-    line
+    let mut end = max.saturating_sub('…'.len_utf8());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    // Back out of an escape left open by the cut: an '&' with no ';' after it.
+    if let Some(amp) = text[..end].rfind('&')
+        && !text[amp..end].contains(';')
+    {
+        end = amp;
+    }
+    text.truncate(end);
+    text.push('…');
+    text
+}
+
+/// Cut a line to [`MAX_LINE_BYTES`].
+fn fit(line: String) -> String {
+    fit_to(line, MAX_LINE_BYTES)
 }
 
 fn row_line(row: &Row) -> String {
@@ -257,7 +269,9 @@ fn row_text(row: &Row) -> String {
 /// room is set aside first, so a long list of claims can't push them out;
 /// claims that don't fit are counted.
 pub fn render(s: &Snapshot) -> String {
-    let open = fit(format!("{OPEN} project=\"{}\">", clean(&s.project)));
+    // Cut the name, not the tag, so the tag always closes.
+    let room = MAX_LINE_BYTES - OPEN.len() - " project=\"\">".len();
+    let open = format!("{OPEN} project=\"{}\">", fit_to(clean(&s.project), room));
     let claims_heading = "Tasks you have claimed here:";
     let next_heading =
         "Next by `levi next`'s ranking (not claimed; `levi next --claim` takes the top one):";
@@ -408,6 +422,15 @@ mod tests {
         );
         assert!(out.len() <= MAX_BYTES, "{} bytes", out.len());
         assert!(out.lines().all(|l| l.len() <= MAX_LINE_BYTES));
+        let first = out.lines().next().unwrap();
+        assert!(first.ends_with("\">"), "{first}");
+        // No line ends in half an escape.
+        for line in out.lines() {
+            let tail = line.trim_end_matches(['…', ')', '"', '>']);
+            if let Some(amp) = tail.rfind('&') {
+                assert!(tail[amp..].contains(';'), "cut escape in {line}");
+            }
+        }
         assert!(out.ends_with("</levi_state>\n"));
         assert!(out.contains("more not shown"));
     }
