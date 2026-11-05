@@ -37,7 +37,7 @@ fn a_blocked_task_leaves_next_until_unblocked() {
     ]);
     let bk = blocker_id(&out);
     assert!(bk.starts_with("bk-"), "{out}");
-    assert_eq!(next_ids(&repo), [other.clone()]);
+    assert_eq!(next_ids(&repo), vec![other.clone()]);
 
     let ls = repo.levi_json(&["ls", "--json"]);
     let t = ls["tasks"]
