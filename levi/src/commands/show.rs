@@ -66,6 +66,29 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         })
         .collect();
     let review = crate::output::review_summary(&ctx.world, &task_id, &mut anc);
+    // Read requests that haven't been withdrawn, and whether each is answered.
+    let read_requests: Vec<_> =
+        levi_core::reads::read_request_states(&ctx.world, &task_id, &mut anc)
+            .into_iter()
+            .map(|st| {
+                json!({
+                    "commit": st.request.commit,
+                    "by": st.request.by_dev,
+                    "machine": st.request.by_machine,
+                    "worktree": st.request.by_worktree,
+                    "at": st.request.created,
+                    "open": st.is_open(),
+                    "answered_by": st.answered_by.map(|r| json!({
+                        "verdict": r.verdict.label(),
+                        "commit": r.commit,
+                        "by": r.by_dev,
+                        "at": r.created,
+                    })),
+                    "closed_before_read": st.closed_before_read,
+                    "source": "declared",
+                })
+            })
+            .collect();
 
     let comments: Vec<_> = ctx
         .world
@@ -156,6 +179,7 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
             "comments": comments,
             "history": history,
             "reviews": reviews,
+            "read_requests": read_requests,
         });
         crate::output::add_review_fields(&mut out, &review);
         println!("{out}");
@@ -253,6 +277,32 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 "  verified at {} but closed here at {} (observed)",
                 &d.verified[..d.verified.len().min(8)],
                 &d.closed[..d.closed.len().min(8)]
+            );
+        }
+    }
+    if !read_requests.is_empty() {
+        println!("read requests (declared):");
+        for r in &read_requests {
+            let commit = r["commit"].as_str().unwrap_or_default();
+            let state = if r["open"] == true {
+                "open".to_string()
+            } else {
+                format!(
+                    "answered: {} by {}",
+                    r["answered_by"]["verdict"].as_str().unwrap_or_default(),
+                    r["answered_by"]["by"].as_str().unwrap_or_default()
+                )
+            };
+            println!(
+                "  by {} at {} @ {} ({state}){}",
+                r["by"].as_str().unwrap_or_default(),
+                r["at"].as_str().unwrap_or_default(),
+                &commit[..commit.len().min(8)],
+                if r["closed_before_read"] == true {
+                    "  ⚠ closed here before it was read"
+                } else {
+                    ""
+                },
             );
         }
     }

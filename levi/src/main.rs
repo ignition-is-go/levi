@@ -123,6 +123,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             commit.as_deref(),
             &note,
         ),
+        Cmd::RequestRead { id, commit } => commands::reads::request(&ctx, &id, commit.as_deref()),
+        Cmd::WithdrawRead { id } => commands::reads::withdraw(&ctx, &id),
         Cmd::SendBack { id, commit, note } => commands::review::run(
             &ctx,
             &id,

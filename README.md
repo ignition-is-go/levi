@@ -81,9 +81,15 @@ worktree on the same machine can. A closer who never claimed the task is
 matched on (dev, machine) only, so they get a warning instead of a refusal.
 levi's identity is self-declared, so this catches mistakes, not impostors.
 
+`levi request-read ID [--commit SHA]` asks for a read before a merge, and
+`levi withdraw-read ID` takes your ask back. The request stays open until
+anyone reviews the task, and asking again replaces your earlier request.
+`show` lists requests, and marks one with `closed_before_read` when a close
+that applies here was made while it was still open.
+
 `check-claims --require-review` also fails unless each task's newest review
 that applies at the tested commit is a verification: no review there, or a
-send-back, fails it.
+send-back, fails it. So does an open read request.
 
 That verification must have read the commit the task closed at, or a later
 one. A verification of an older commit fails the gate too, since the commits

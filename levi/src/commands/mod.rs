@@ -9,6 +9,7 @@ pub mod init;
 pub mod ls;
 pub mod next;
 pub mod project;
+pub mod reads;
 pub mod review;
 pub mod show;
 pub mod status;

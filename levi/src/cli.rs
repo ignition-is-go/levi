@@ -168,6 +168,17 @@ pub enum Cmd {
         #[arg(short = 'm', long = "message", default_value = "")]
         note: String,
     },
+    /// Ask for a read of a task at a commit (HEAD by default) before it's
+    /// merged. Open until someone verifies or sends it back; while it's open,
+    /// `check-claims --require-review` fails. Asking again replaces it.
+    RequestRead {
+        id: String,
+        /// The commit to read. Defaults to HEAD.
+        #[arg(long)]
+        commit: Option<String>,
+    },
+    /// Withdraw your read request on a task.
+    WithdrawRead { id: String },
     /// Send a task back: you read it at a commit (HEAD by default) and
     /// something's missing. Refused for the task's claimant or closer.
     SendBack {
