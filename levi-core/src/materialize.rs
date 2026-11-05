@@ -38,6 +38,8 @@ pub struct World {
     pub comments: Vec<Comment>,
     pub commit_facts: BTreeMap<String, CommitFact>,
     pub ref_facts: BTreeMap<String, RefFact>,
+    /// Sorted by (at, id).
+    pub reviews: Vec<Review>,
 }
 
 impl World {
@@ -46,6 +48,14 @@ impl World {
         self.status_changes
             .iter()
             .filter(|c| &*c.task_id == task_id)
+            .collect()
+    }
+
+    /// This task's reviews, in (at, id) order.
+    pub fn reviews_for(&self, task_id: &str) -> Vec<&Review> {
+        self.reviews
+            .iter()
+            .filter(|r| &*r.task_id == task_id)
             .collect()
     }
 
@@ -69,6 +79,7 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
     let mut w = World::default();
     let mut status_changes: BTreeMap<String, StatusChange> = BTreeMap::new();
     let mut comments: BTreeMap<String, Comment> = BTreeMap::new();
+    let mut reviews: BTreeMap<String, Review> = BTreeMap::new();
 
     for r in &records {
         let ev = &r.event;
@@ -98,6 +109,8 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
             apply(&mut w.commit_facts, ev);
         } else if t == RefFact::ENTITY_NAME_STATIC {
             apply(&mut w.ref_facts, ev);
+        } else if t == Review::ENTITY_NAME_STATIC {
+            apply(&mut reviews, ev);
         }
         // Unknown item types are skipped: forward compatibility with newer levi.
     }
@@ -107,6 +120,9 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
         .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
     w.comments = comments.into_values().collect();
     w.comments
+        .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
+    w.reviews = reviews.into_values().collect();
+    w.reviews
         .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
     w
 }
@@ -294,5 +310,74 @@ mod tests {
             event,
         }]);
         assert!(w.tasks.is_empty());
+    }
+
+    #[test]
+    fn reviews_replay_sorted_and_per_task() {
+        let r = |id: &str, task: &str, at: &str| Review {
+            id: id.into(),
+            project_id: "p".into(),
+            task_id: task.into(),
+            verdict: ReviewVerdict::Verified,
+            commit: "abc".into(),
+            note: String::new(),
+            by_dev: "d".into(),
+            by_machine: "m".into(),
+            by_machine_id: String::new(),
+            by_worktree: "/w".into(),
+            created: at.into(),
+        };
+        let w = materialize(vec![
+            rec(
+                "cc",
+                &r("r2", "t1", "2026-07-02T00:00:00Z"),
+                "2026-07-02T00:00:00Z",
+            ),
+            rec(
+                "aa",
+                &r("r1", "t1", "2026-07-01T00:00:00Z"),
+                "2026-07-01T00:00:00Z",
+            ),
+            rec(
+                "bb",
+                &r("r3", "t2", "2026-07-01T12:00:00Z"),
+                "2026-07-01T12:00:00Z",
+            ),
+        ]);
+        let ids: Vec<_> = w
+            .reviews_for("t1")
+            .iter()
+            .map(|r| r.id.0.to_string())
+            .collect();
+        assert_eq!(ids, ["r1", "r2"]);
+        assert_eq!(w.reviews_for("t2").len(), 1);
+    }
+
+    #[test]
+    fn review_without_note_or_machine_id_still_materializes() {
+        let review = Review {
+            id: "r1".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            verdict: ReviewVerdict::SentBack,
+            commit: "abc".into(),
+            note: "x".into(),
+            by_dev: "d".into(),
+            by_machine: "m".into(),
+            by_machine_id: "id".into(),
+            by_worktree: "/w".into(),
+            created: "2026-07-01T00:00:00Z".into(),
+        };
+        let mut event = MEvent::from_item(&review, MEventType::SET, "m");
+        let item = event.item.as_object_mut().unwrap();
+        item.remove("note");
+        item.remove("byMachineId");
+        event.created_at = "2026-07-01T00:00:00Z".into();
+        let w = materialize(vec![EventRecord {
+            id: "aa".into(),
+            event,
+        }]);
+        assert_eq!(w.reviews[0].note, "");
+        assert_eq!(w.reviews[0].by_machine_id, "");
     }
 }

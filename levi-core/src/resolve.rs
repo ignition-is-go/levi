@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use crate::entities::{CommitFact, StatusChange, StatusKind};
+use crate::entities::{CommitFact, Review, ReviewVerdict, StatusChange, StatusKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ancestry {
@@ -128,6 +128,111 @@ pub fn effective_status(
         }
     }
     ResolvedStatus { status, resolution }
+}
+
+/// The anchor of the change that leaves this task closed here: the newest
+/// applying change, when it is an anchored close. `None` when the task is
+/// open here, or was closed with `--no-anchor`.
+pub fn closing_anchor<'a>(
+    changes: &[&'a StatusChange],
+    anc: &mut impl AncestorSet,
+) -> Option<&'a str> {
+    let mut last: Option<&'a StatusChange> = None;
+    for change in changes {
+        let applies = match &change.anchor_commit {
+            None => true,
+            Some(sha) => matches!(anc.contains(sha), Ancestry::Yes | Ancestry::Rewritten),
+        };
+        if applies {
+            last = Some(change);
+        }
+    }
+    let change = last?;
+    match change.to_status {
+        StatusKind::Closed => change.anchor_commit.as_deref(),
+        StatusKind::Reopened => None,
+    }
+}
+
+/// Reviews whose commit is an ancestor of HEAD, in the order given (which
+/// must be (at, id), as `World::reviews_for` returns), each with how its
+/// ancestry was answered. Graded like `effective_status`: a patch-id match
+/// applies and weakens to `Squashed`; an unknown commit is skipped and
+/// weakens to `Partial`, so a review is never silently applied or dropped.
+pub fn applying_reviews<'a>(
+    reviews: &[&'a Review],
+    anc: &mut impl AncestorSet,
+    base: Resolution,
+) -> (Vec<(&'a Review, Ancestry)>, Resolution) {
+    let mut applying = Vec::new();
+    let mut resolution = base;
+    for review in reviews {
+        match anc.contains(&review.commit) {
+            a @ Ancestry::Yes => applying.push((*review, a)),
+            a @ Ancestry::Rewritten => {
+                resolution = resolution.weaken(Resolution::Squashed);
+                applying.push((*review, a));
+            }
+            Ancestry::No => {}
+            Ancestry::Unknown => resolution = resolution.weaken(Resolution::Partial),
+        }
+    }
+    (applying, resolution)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ReviewState {
+    Verified,
+    SentBack,
+    None,
+}
+
+impl ReviewState {
+    pub fn label(self) -> &'static str {
+        match self {
+            ReviewState::Verified => "verified",
+            ReviewState::SentBack => "sent_back",
+            ReviewState::None => "none",
+        }
+    }
+}
+
+/// The newest applying review decides. `applying` is as `applying_reviews`
+/// returns it.
+pub fn review_state(applying: &[(&Review, Ancestry)]) -> ReviewState {
+    match applying.last() {
+        None => ReviewState::None,
+        Some((r, _)) => match r.verdict {
+            ReviewVerdict::Verified => ReviewState::Verified,
+            ReviewVerdict::SentBack => ReviewState::SentBack,
+        },
+    }
+}
+
+/// The task is closed here at `closed`, but the
+/// newest applying verification read a different commit, so what was
+/// checked isn't exactly what closed it. Worked out from git alone.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReviewDiffers {
+    pub verified: String,
+    pub closed: String,
+}
+
+/// `closed` is `closing_anchor` for this checkout. `None` when the task
+/// isn't closed here, has no applying verification, or they agree.
+pub fn review_differs(
+    closed: Option<&str>,
+    applying: &[(&Review, Ancestry)],
+) -> Option<ReviewDiffers> {
+    let closed = closed?;
+    let (verified, _) = applying
+        .iter()
+        .rev()
+        .find(|(r, _)| r.verdict == ReviewVerdict::Verified)?;
+    (verified.commit != closed).then(|| ReviewDiffers {
+        verified: verified.commit.clone(),
+        closed: closed.to_string(),
+    })
 }
 
 /// Ancestor set over the CommitFact graph, for git-free nodes (the hub, the
@@ -591,5 +696,146 @@ mod tests {
                 Resolution::Squashed
             );
         }
+    }
+
+    fn review(id: &str, verdict: ReviewVerdict, commit: &str, at: &str) -> Review {
+        Review {
+            id: id.into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            verdict,
+            commit: commit.into(),
+            note: format!("note {id}"),
+            by_dev: "r".into(),
+            by_machine: "m".into(),
+            by_machine_id: String::new(),
+            by_worktree: "/r".into(),
+            created: at.into(),
+        }
+    }
+
+    #[test]
+    fn reviews_apply_by_ancestry() {
+        let rs = [
+            review("r1", ReviewVerdict::SentBack, "a", "2026-07-01T00:00:00Z"),
+            review("r2", ReviewVerdict::Verified, "b", "2026-07-02T00:00:00Z"),
+        ];
+        let refs: Vec<&Review> = rs.iter().collect();
+        // On a checkout holding only `a`, the later verification at `b`
+        // doesn't apply, so the task reads as sent back here.
+        let (applying, res) =
+            applying_reviews(&refs, &mut MapAncestors::of(["a"]), Resolution::Exact);
+        assert_eq!(applying.len(), 1);
+        assert_eq!(res, Resolution::Exact);
+        assert_eq!(review_state(&applying), ReviewState::SentBack);
+        // Holding both: the newest applying review, the verification, wins.
+        let (applying, _) =
+            applying_reviews(&refs, &mut MapAncestors::of(["a", "b"]), Resolution::Exact);
+        assert_eq!(review_state(&applying), ReviewState::Verified);
+        // Holding neither: no review here.
+        let (applying, _) = applying_reviews(&refs, &mut MapAncestors::of([]), Resolution::Exact);
+        assert_eq!(review_state(&applying), ReviewState::None);
+    }
+
+    #[test]
+    fn unknown_review_commit_is_skipped_and_partial() {
+        let rs = [review(
+            "r1",
+            ReviewVerdict::Verified,
+            "x",
+            "2026-07-01T00:00:00Z",
+        )];
+        let refs: Vec<&Review> = rs.iter().collect();
+        let mut anc = PartialMapAncestors {
+            yes: HashSet::new(),
+            unknown: ["x".to_string()].into(),
+        };
+        let (applying, res) = applying_reviews(&refs, &mut anc, Resolution::Facts);
+        assert!(applying.is_empty());
+        assert_eq!(res, Resolution::Partial);
+    }
+
+    #[test]
+    fn rewritten_review_commit_applies_as_squashed() {
+        struct Rewritten;
+        impl AncestorSet for Rewritten {
+            fn contains(&mut self, _: &str) -> Ancestry {
+                Ancestry::Rewritten
+            }
+        }
+        let rs = [review(
+            "r1",
+            ReviewVerdict::Verified,
+            "x",
+            "2026-07-01T00:00:00Z",
+        )];
+        let refs: Vec<&Review> = rs.iter().collect();
+        let (applying, res) = applying_reviews(&refs, &mut Rewritten, Resolution::Exact);
+        assert_eq!(review_state(&applying), ReviewState::Verified);
+        assert_eq!(res, Resolution::Squashed);
+    }
+
+    #[test]
+    fn closing_anchor_is_the_applying_close() {
+        let cs = [
+            change("c1", StatusKind::Closed, Some("a"), "2026-07-01T00:00:00Z"),
+            change(
+                "c2",
+                StatusKind::Reopened,
+                Some("b"),
+                "2026-07-02T00:00:00Z",
+            ),
+            change("c3", StatusKind::Closed, Some("c"), "2026-07-03T00:00:00Z"),
+        ];
+        let refs: Vec<&StatusChange> = cs.iter().collect();
+        assert_eq!(
+            closing_anchor(&refs, &mut MapAncestors::of(["a"])),
+            Some("a")
+        );
+        assert_eq!(
+            closing_anchor(&refs, &mut MapAncestors::of(["a", "b"])),
+            None
+        );
+        assert_eq!(
+            closing_anchor(&refs, &mut MapAncestors::of(["a", "b", "c"])),
+            Some("c")
+        );
+        assert_eq!(closing_anchor(&refs, &mut MapAncestors::of([])), None);
+        let unanchored = [change(
+            "c1",
+            StatusKind::Closed,
+            None,
+            "2026-07-01T00:00:00Z",
+        )];
+        let refs: Vec<&StatusChange> = unanchored.iter().collect();
+        assert_eq!(closing_anchor(&refs, &mut MapAncestors::of([])), None);
+    }
+
+    #[test]
+    fn review_differs_compares_newest_verification_with_the_close() {
+        let rs = [
+            review("r1", ReviewVerdict::Verified, "a", "2026-07-01T00:00:00Z"),
+            review("r2", ReviewVerdict::Verified, "b", "2026-07-02T00:00:00Z"),
+            review("r3", ReviewVerdict::SentBack, "c", "2026-07-03T00:00:00Z"),
+        ];
+        let refs: Vec<&Review> = rs.iter().collect();
+        let (applying, _) = applying_reviews(
+            &refs,
+            &mut MapAncestors::of(["a", "b", "c"]),
+            Resolution::Exact,
+        );
+        // Newest verification is at `b`; a send-back after it doesn't count.
+        assert_eq!(review_differs(Some("b"), &applying), None);
+        assert_eq!(
+            review_differs(Some("a"), &applying),
+            Some(ReviewDiffers {
+                verified: "b".into(),
+                closed: "a".into()
+            })
+        );
+        assert_eq!(review_differs(None, &applying), None);
+        let (none, _) =
+            applying_reviews(&refs[2..], &mut MapAncestors::of(["c"]), Resolution::Exact);
+        assert_eq!(review_differs(Some("a"), &none), None);
     }
 }

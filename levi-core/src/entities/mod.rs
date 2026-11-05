@@ -6,6 +6,7 @@ mod dependency;
 mod log_entry;
 mod project;
 mod ref_fact;
+mod review;
 mod status_change;
 mod task;
 
@@ -17,6 +18,7 @@ pub use dependency::*;
 pub use log_entry::*;
 pub use project::*;
 pub use ref_fact::*;
+pub use review::*;
 pub use status_change::*;
 pub use task::*;
 
