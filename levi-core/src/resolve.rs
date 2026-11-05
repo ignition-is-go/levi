@@ -305,6 +305,38 @@ impl AncestorSet for FactsAncestors {
     }
 }
 
+/// Answers "is `ancestor` an ancestor of (or equal to) `descendant`?" for two
+/// arbitrary commits, where `AncestorSet` only knows one fixed head. The
+/// review gate uses it to check that a verification read the closing commit
+/// or something after it.
+pub trait CommitOrder {
+    fn is_ancestor(&mut self, ancestor: &str, descendant: &str) -> Ancestry;
+}
+
+impl<O: CommitOrder + ?Sized> CommitOrder for &mut O {
+    fn is_ancestor(&mut self, ancestor: &str, descendant: &str) -> Ancestry {
+        (**self).is_ancestor(ancestor, descendant)
+    }
+}
+
+/// `CommitOrder` over the CommitFact graph, for git-free nodes. Same rules as
+/// `FactsAncestors`: an incomplete walk answers `Unknown`, never `No`.
+pub struct FactsOrder<'f> {
+    facts: &'f BTreeMap<String, CommitFact>,
+}
+
+impl<'f> FactsOrder<'f> {
+    pub fn new(facts: &'f BTreeMap<String, CommitFact>) -> Self {
+        Self { facts }
+    }
+}
+
+impl CommitOrder for FactsOrder<'_> {
+    fn is_ancestor(&mut self, ancestor: &str, descendant: &str) -> Ancestry {
+        FactsAncestors::new(self.facts, descendant).contains(ancestor)
+    }
+}
+
 /// Test helper: membership map, `Yes` iff contained, else `No`.
 pub struct MapAncestors(pub HashSet<String>);
 
@@ -321,6 +353,42 @@ impl AncestorSet for MapAncestors {
         } else {
             Ancestry::No
         }
+    }
+}
+
+/// Test helper: a commit graph as child -> parents; commits absent from it
+/// are unknown.
+pub struct MapOrder(pub HashMap<String, Vec<String>>);
+
+impl MapOrder {
+    pub fn of<const N: usize>(edges: [(&str, &[&str]); N]) -> Self {
+        Self(
+            edges
+                .iter()
+                .map(|(c, ps)| (c.to_string(), ps.iter().map(|p| p.to_string()).collect()))
+                .collect(),
+        )
+    }
+}
+
+impl CommitOrder for MapOrder {
+    fn is_ancestor(&mut self, ancestor: &str, descendant: &str) -> Ancestry {
+        if !self.0.contains_key(ancestor) || !self.0.contains_key(descendant) {
+            return Ancestry::Unknown;
+        }
+        let mut queue = VecDeque::from([descendant.to_string()]);
+        let mut seen = HashSet::new();
+        while let Some(c) = queue.pop_front() {
+            if c == ancestor {
+                return Ancestry::Yes;
+            }
+            if seen.insert(c.clone())
+                && let Some(ps) = self.0.get(&c)
+            {
+                queue.extend(ps.iter().cloned());
+            }
+        }
+        Ancestry::No
     }
 }
 
@@ -838,5 +906,29 @@ mod tests {
         let (none, _) =
             applying_reviews(&refs[2..], &mut MapAncestors::of(["c"]), Resolution::Exact);
         assert_eq!(review_differs(Some("a"), &none), None);
+    }
+
+    #[test]
+    fn facts_order_compares_two_commits_and_never_guesses() {
+        let fact = |sha: &str, parents: &[&str]| {
+            (
+                sha.to_string(),
+                CommitFact {
+                    id: sha.into(),
+                    project_id: "p".into(),
+                    parents: parents.iter().map(|p| p.to_string()).collect(),
+                    patch_id: None,
+                },
+            )
+        };
+        let facts: BTreeMap<String, CommitFact> =
+            [fact("a", &[]), fact("b", &["a"]), fact("x", &["a"])].into();
+        let mut order = FactsOrder::new(&facts);
+        assert_eq!(order.is_ancestor("a", "b"), Ancestry::Yes);
+        assert_eq!(order.is_ancestor("b", "b"), Ancestry::Yes);
+        assert_eq!(order.is_ancestor("b", "a"), Ancestry::No);
+        assert_eq!(order.is_ancestor("b", "x"), Ancestry::No);
+        // An unknown descendant can't be walked.
+        assert_eq!(order.is_ancestor("a", "zz"), Ancestry::Unknown);
     }
 }

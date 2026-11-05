@@ -40,6 +40,7 @@ pub fn run(
     let tested_commit = ctx.rev(at.as_deref().unwrap_or("HEAD"))?.to_string();
     let mut anc = ctx.ancestors_for(Some(&tested_commit))?;
     let statuses = ctx.statuses(&mut anc, Resolution::Exact);
+    let mut order = crate::ancestors::GixOrder::new(ctx.store.repo(), ctx.config.patch_id_window);
     let mut tasks = Vec::with_capacity(task_ids.len());
     let mut open = Vec::new();
     for task_id in task_ids {
@@ -58,7 +59,7 @@ pub fn run(
             continue;
         };
         let status = &statuses[task_id];
-        let gate = review_gate(&ctx.world, task_id, &mut anc, Resolution::Exact);
+        let gate = review_gate(&ctx.world, task_id, &mut anc, &mut order, Resolution::Exact);
         let closed = status.status == Status::Closed && status.resolution != Resolution::Partial;
         if !closed || (require_review && !gate.passes()) {
             open.push(task_id.to_string());
@@ -70,6 +71,12 @@ pub fn run(
             "status": status.status.label(),
             "resolution": status.resolution.label(),
             "open_reads": gate.open_reads,
+            // The verification read a commit older than the close: the
+            // commits between were never reviewed. Fails the gate.
+            "stale_review": gate.stale_review,
+            // The counting verification matched the closer on dev and
+            // machine only; reported so CI can see it.
+            "self_review_warning": gate.self_review_warning,
         });
         crate::output::add_review_fields(
             &mut entry,

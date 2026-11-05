@@ -1,21 +1,31 @@
 //! The review gate behind `levi check-claims --require-review`: does a task
-//! carry a verification that holds at the tested commit?
+//! carry a verification that holds at the tested commit, and did it read the
+//! commit that closed the task, or something after it?
 
+use crate::entities::ReviewVerdict;
 use crate::materialize::World;
 use crate::resolve::{
-    AncestorSet, Resolution, ReviewDiffers, ReviewState, applying_reviews, closing_anchor,
-    review_differs, review_state,
+    AncestorSet, Ancestry, CommitOrder, Resolution, ReviewDiffers, ReviewState, applying_reviews,
+    closing_anchor, review_differs, review_state,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewGate {
     /// The task's review state at the tested commit.
     pub review: ReviewState,
-    /// How the reviews' ancestry was answered. `Partial` fails the gate: a
-    /// review whose commit can't be placed is never silently counted.
+    /// How ancestry was answered, for the reviews and for the verification's
+    /// order against the close. `Partial` fails the gate: what can't be
+    /// placed is never silently counted.
     pub resolution: Resolution,
     /// Read requests still waiting for an answer.
     pub open_reads: usize,
+    /// The counting verification read a commit strictly older than the one
+    /// that closed the task, so the commits between were never reviewed. The
+    /// rule is a read at the head being merged. Fails the gate.
+    pub stale_review: bool,
+    /// The counting verification was made with a self-review warning: the
+    /// reviewer matched the closer on dev and machine only.
+    pub self_review_warning: bool,
     /// For information, not part of the verdict: the newest verification
     /// read a different commit from the one that closed the task.
     pub differs: Option<ReviewDiffers>,
@@ -26,28 +36,49 @@ impl ReviewGate {
         self.review == ReviewState::Verified
             && self.resolution != Resolution::Partial
             && self.open_reads == 0
+            && !self.stale_review
     }
 }
 
-/// Evaluate the gate for `task_id`, with `anc` answering ancestry at the
-/// tested commit. `base` is `Exact` or `Facts`, as for `effective_status`.
+/// Evaluate the gate for `task_id`. `anc` answers ancestry at the tested
+/// commit; `order` compares two commits (the close and the verification).
+/// `base` is `Exact` or `Facts`, as for `effective_status`.
 pub fn review_gate(
     world: &World,
     task_id: &str,
     anc: &mut impl AncestorSet,
+    order: &mut impl CommitOrder,
     base: Resolution,
 ) -> ReviewGate {
     let reviews = world.reviews_for(task_id);
-    let (applying, resolution) = applying_reviews(&reviews, &mut *anc, base);
+    let (applying, mut resolution) = applying_reviews(&reviews, &mut *anc, base);
     let closed = closing_anchor(&world.changes_for(task_id), &mut *anc);
+    let review = review_state(&applying);
+    let counting = applying
+        .last()
+        .map(|(r, _)| *r)
+        .filter(|r| r.verdict == ReviewVerdict::Verified);
+    // A verification counts only if it read the closing commit or a later
+    // one. An unanchored close has no commit to compare with.
+    let mut stale_review = false;
+    if let (Some(verified), Some(closed)) = (counting, closed) {
+        match order.is_ancestor(closed, &verified.commit) {
+            Ancestry::Yes => {}
+            Ancestry::Rewritten => resolution = resolution.weaken(Resolution::Squashed),
+            Ancestry::No => stale_review = true,
+            Ancestry::Unknown => resolution = resolution.weaken(Resolution::Partial),
+        }
+    }
     // TODO(RAL-47 feature 2): count open read requests once ReadRequest
     // lands (reads::read_request_states(..).filter(is_open)), and add a test
     // that an open request fails the gate. Until then there are none.
     let open_reads = 0;
     ReviewGate {
-        review: review_state(&applying),
+        review,
         resolution,
         open_reads,
+        stale_review,
+        self_review_warning: counting.is_some_and(|r| r.self_review_warning),
         differs: review_differs(closed, &applying),
     }
 }
@@ -56,7 +87,7 @@ pub fn review_gate(
 mod tests {
     use super::*;
     use crate::entities::*;
-    use crate::resolve::{MapAncestors, PartialMapAncestors};
+    use crate::resolve::{MapAncestors, MapOrder, PartialMapAncestors};
 
     fn review(id: &str, verdict: ReviewVerdict, commit: &str, at: &str) -> Review {
         Review {
@@ -75,6 +106,11 @@ mod tests {
         }
     }
 
+    /// Linear history a <- b <- c.
+    fn line() -> MapOrder {
+        MapOrder::of([("a", &[]), ("b", &["a"]), ("c", &["b"])])
+    }
+
     fn closed_at(w: &mut World, anchor: &str) {
         w.status_changes.push(StatusChange {
             id: "c1".into(),
@@ -91,7 +127,13 @@ mod tests {
     #[test]
     fn no_review_fails() {
         let w = World::default();
-        let g = review_gate(&w, "t1", &mut MapAncestors::of([]), Resolution::Exact);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of([]),
+            &mut line(),
+            Resolution::Exact,
+        );
         assert_eq!(g.review, ReviewState::None);
         assert!(!g.passes());
     }
@@ -108,7 +150,13 @@ mod tests {
             ..Default::default()
         };
         closed_at(&mut w, "a");
-        let g = review_gate(&w, "t1", &mut MapAncestors::of(["a"]), Resolution::Exact);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a"]),
+            &mut line(),
+            Resolution::Exact,
+        );
         assert!(g.passes());
         assert_eq!(g.differs, None);
         assert_eq!(g.open_reads, 0);
@@ -125,7 +173,13 @@ mod tests {
             )],
             ..Default::default()
         };
-        let g = review_gate(&w, "t1", &mut MapAncestors::of(["a"]), Resolution::Exact);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a"]),
+            &mut line(),
+            Resolution::Exact,
+        );
         assert!(!g.passes());
     }
 
@@ -138,7 +192,13 @@ mod tests {
             ],
             ..Default::default()
         };
-        let g = review_gate(&w, "t1", &mut MapAncestors::of(["a"]), Resolution::Exact);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a"]),
+            &mut line(),
+            Resolution::Exact,
+        );
         assert_eq!(g.review, ReviewState::SentBack);
         assert!(!g.passes());
     }
@@ -156,7 +216,7 @@ mod tests {
             yes: ["a".to_string()].into(),
             unknown: ["x".to_string()].into(),
         };
-        let g = review_gate(&w, "t1", &mut anc, Resolution::Facts);
+        let g = review_gate(&w, "t1", &mut anc, &mut line(), Resolution::Facts);
         // The send-back at `x` can't be placed: the verification alone would
         // pass, so the gate must refuse rather than guess.
         assert_eq!(g.review, ReviewState::Verified);
@@ -165,7 +225,39 @@ mod tests {
     }
 
     #[test]
-    fn verifying_a_different_commit_still_passes_but_reports_it() {
+    fn a_verification_after_the_close_passes_and_reports_differs() {
+        // a <- b <- c: closed at b, verified at the later c.
+        let mut w = World {
+            reviews: vec![review(
+                "r1",
+                ReviewVerdict::Verified,
+                "c",
+                "2026-07-02T00:00:00Z",
+            )],
+            ..Default::default()
+        };
+        closed_at(&mut w, "b");
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a", "b", "c"]),
+            &mut line(),
+            Resolution::Exact,
+        );
+        assert!(!g.stale_review);
+        assert!(g.passes());
+        assert_eq!(
+            g.differs,
+            Some(ReviewDiffers {
+                verified: "c".into(),
+                closed: "b".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_verification_older_than_the_close_fails_as_stale() {
+        // Closed at c, but the verification read a: b and c were never read.
         let mut w = World {
             reviews: vec![review(
                 "r1",
@@ -175,20 +267,90 @@ mod tests {
             )],
             ..Default::default()
         };
-        closed_at(&mut w, "b");
+        closed_at(&mut w, "c");
         let g = review_gate(
             &w,
             "t1",
-            &mut MapAncestors::of(["a", "b"]),
+            &mut MapAncestors::of(["a", "b", "c"]),
+            &mut line(),
+            Resolution::Exact,
+        );
+        assert_eq!(g.review, ReviewState::Verified);
+        assert!(g.stale_review);
+        assert!(!g.passes());
+        // Still reported, for information.
+        assert!(g.differs.is_some());
+    }
+
+    #[test]
+    fn a_verification_on_a_parallel_branch_is_stale() {
+        // a <- b (closed) and a <- x (verified), both in the tested history:
+        // the read never saw b.
+        let mut w = World {
+            reviews: vec![review(
+                "r1",
+                ReviewVerdict::Verified,
+                "x",
+                "2026-07-02T00:00:00Z",
+            )],
+            ..Default::default()
+        };
+        closed_at(&mut w, "b");
+        let mut order = MapOrder::of([("a", &[]), ("b", &["a"]), ("x", &["a"])]);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a", "b", "x"]),
+            &mut order,
+            Resolution::Exact,
+        );
+        assert!(g.stale_review);
+        assert!(!g.passes());
+    }
+
+    #[test]
+    fn unknown_order_between_close_and_verification_fails_as_partial() {
+        let mut w = World {
+            reviews: vec![review(
+                "r1",
+                ReviewVerdict::Verified,
+                "c",
+                "2026-07-02T00:00:00Z",
+            )],
+            ..Default::default()
+        };
+        closed_at(&mut w, "b");
+        // The order graph doesn't know b.
+        let mut order = MapOrder::of([("c", &[])]);
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["b", "c"]),
+            &mut order,
+            Resolution::Exact,
+        );
+        assert!(!g.stale_review);
+        assert_eq!(g.resolution, Resolution::Partial);
+        assert!(!g.passes());
+    }
+
+    #[test]
+    fn self_review_warning_on_the_counting_verification_is_reported() {
+        let mut r = review("r1", ReviewVerdict::Verified, "a", "2026-07-02T00:00:00Z");
+        r.self_review_warning = true;
+        let mut w = World {
+            reviews: vec![r],
+            ..Default::default()
+        };
+        closed_at(&mut w, "a");
+        let g = review_gate(
+            &w,
+            "t1",
+            &mut MapAncestors::of(["a"]),
+            &mut line(),
             Resolution::Exact,
         );
         assert!(g.passes());
-        assert_eq!(
-            g.differs,
-            Some(ReviewDiffers {
-                verified: "a".into(),
-                closed: "b".into()
-            })
-        );
+        assert!(g.self_review_warning);
     }
 }

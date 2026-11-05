@@ -85,6 +85,10 @@ levi's identity is self-declared, so this catches mistakes, not impostors.
 that applies at the tested commit is a verification: no review there, or a
 send-back, fails it.
 
+That verification must have read the commit the task closed at, or a later
+one. A verification of an older commit fails the gate too, since the commits
+between were never read: `check-claims --json` reports it as `stale_review`.
+
 ## GitHub Action
 
 Levi publishes a colocated composite action backed by checksum-verified native

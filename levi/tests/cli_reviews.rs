@@ -317,3 +317,54 @@ fn require_review_fails_where_the_close_holds_but_the_read_does_not() {
     );
     assert_eq!(result["tasks"][0]["review_differs"]["closed"], fix.as_str());
 }
+
+#[test]
+fn require_review_fails_a_verification_older_than_the_close() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("read too early", &[]);
+    let wt = reviewer_worktree(&repo, "reviewer");
+
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.levi_ok(&["start", &id]);
+    let early = repo.commit("first half");
+    ok_in(&repo, &wt, &["verify", &id, "--commit", &early]);
+    let fix = repo.commit("second half, never read");
+    repo.levi_ok(&["close", &id]);
+
+    // Closed at the fix, verified only at the earlier commit: the second
+    // half was never reviewed, so the gate fails though both are in history.
+    let out = repo
+        .levi(&[
+            "check-claims",
+            "--git-ref",
+            "feature",
+            "--require-review",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let result: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["tasks"][0]["status"], "closed");
+    assert_eq!(result["tasks"][0]["review"], "verified");
+    assert_eq!(result["tasks"][0]["stale_review"], true);
+    assert_eq!(
+        result["tasks"][0]["review_differs"]["verified"],
+        early.as_str()
+    );
+    assert_eq!(result["tasks"][0]["review_differs"]["closed"], fix.as_str());
+
+    // A second read at the closing commit passes.
+    ok_in(&repo, &wt, &["verify", &id, "--commit", &fix]);
+    let result = repo.levi_json(&[
+        "check-claims",
+        "--git-ref",
+        "feature",
+        "--require-review",
+        "--json",
+    ]);
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["tasks"][0]["stale_review"], false);
+    assert_eq!(result["tasks"][0]["self_review_warning"], false);
+}

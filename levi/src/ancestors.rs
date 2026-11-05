@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use gix::ObjectId;
-use levi_core::resolve::{AncestorSet, Ancestry};
+use levi_core::resolve::{AncestorSet, Ancestry, CommitOrder};
 
 /// How many recent commits per head to consider for squash/rebase patch-id
 /// matching (spec 2026-07-22). CLI-local; the fact publisher has its own knob.
@@ -110,6 +110,40 @@ impl AncestorSet for GixAncestors<'_> {
         let a = self.lookup(sha);
         self.cache.insert(sha.to_string(), a);
         a
+    }
+}
+
+/// `CommitOrder` against the real repository: is one commit an ancestor of
+/// another, by gix merge-base, with the same patch-id fallback as
+/// `GixAncestors` (a rewritten ancestor answers `Rewritten`).
+pub struct GixOrder<'r> {
+    repo: &'r gix::Repository,
+    window: usize,
+}
+
+impl<'r> GixOrder<'r> {
+    pub fn new(repo: &'r gix::Repository, window: usize) -> Self {
+        Self { repo, window }
+    }
+}
+
+impl CommitOrder for GixOrder<'_> {
+    fn is_ancestor(&mut self, ancestor: &str, descendant: &str) -> Ancestry {
+        let Ok(descendant) = ObjectId::from_hex(descendant.as_bytes()) else {
+            return Ancestry::Unknown;
+        };
+        if self
+            .repo
+            .try_find_object(descendant)
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            return Ancestry::Unknown;
+        }
+        GixAncestors::at(self.repo, Some(descendant))
+            .with_window(self.window)
+            .contains(ancestor)
     }
 }
 
