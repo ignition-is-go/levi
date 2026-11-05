@@ -1,7 +1,7 @@
 //! Ranking for `levi next` (spec §Ranking).
 //!
 //! Eligible = open on this checkout ∧ every blocker closed on this checkout ∧
-//! no live claim by someone else. Order: priority (P0 first) → transitive
+//! no open non-task Blocker ∧ no live claim by someone else. Order: priority (P0 first) → transitive
 //! unblock count (closing this frees the most open work) → age (oldest
 //! first) → task id. Deterministic and explainable.
 
@@ -31,6 +31,90 @@ pub fn claim_is(claim: &crate::entities::Claim, me: &Identity) -> bool {
         claim.machine == me.machine
     };
     claim.dev == me.dev && machine_matches && claim.worktree == me.worktree
+}
+
+/// Why a review would be the reviewer reviewing their own work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfReview {
+    /// The reviewer holds, or last held, the task's claim.
+    Claimant,
+    /// The reviewer closed the task.
+    Closer,
+    /// The reviewer matches the closer's (dev, machine), but the closer never
+    /// claimed the task, so there's no worktree to tell them apart. Warn,
+    /// don't refuse: a different session on the same host is a real second
+    /// read. Set `Review::self_review_warning`.
+    CloserHostOnly,
+}
+
+impl SelfReview {
+    /// Refuse the review, rather than warn about it.
+    pub fn refuses(self) -> bool {
+        !matches!(self, SelfReview::CloserHostOnly)
+    }
+}
+
+/// Would `reviewer` be reviewing their own work on `task_id`? Identity is
+/// (dev, machine, worktree), since sessions on one machine commonly share a
+/// git email and hostname. Two checks:
+///
+/// - **Latest claimant:** the newest claim ever set on the task (claims
+///   released by `drop` or `close` still count), compared with `claim_is`.
+/// - **Closer:** the newest close. A StatusChange records no worktree, so the
+///   closer's worktree comes from their claims on this task: the reviewer is
+///   the closer if any claim by the closer's (dev, machine) was made from the
+///   reviewer's worktree. A closer who never claimed it can only be matched
+///   on (dev, machine), which gives `CloserHostOnly`, a warning.
+///
+/// Levi's identity is declared, so this catches mistakes, not impostors.
+pub fn is_self_review(world: &World, task_id: &str, reviewer: &Identity) -> Option<SelfReview> {
+    let claims: Vec<&crate::entities::Claim> = world
+        .claim_history
+        .iter()
+        .filter(|c| &*c.task_id == task_id)
+        .collect();
+    if let Some(latest) = claims
+        .iter()
+        .max_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)))
+        && claim_is(latest, reviewer)
+    {
+        return Some(SelfReview::Claimant);
+    }
+    let closer = world
+        .changes_for(task_id)
+        .into_iter()
+        .rev()
+        .find(|c| c.to_status == crate::entities::StatusKind::Closed)?;
+    if closer.by_dev != reviewer.dev || closer.by_machine != reviewer.machine {
+        return None;
+    }
+    let closers_claims: Vec<_> = claims
+        .iter()
+        .filter(|c| c.dev == closer.by_dev && c.machine == closer.by_machine)
+        .collect();
+    if closers_claims.is_empty() {
+        Some(SelfReview::CloserHostOnly)
+    } else if closers_claims.iter().any(|c| claim_is(c, reviewer)) {
+        Some(SelfReview::Closer)
+    } else {
+        None
+    }
+}
+
+/// Note sent-back tasks in `next`'s reasons. `sent_back` maps task id to the
+/// note of its newest applying review, for tasks whose review state here is
+/// `SentBack`. Ranking is unchanged: a sent-back task that is still open is
+/// already eligible.
+pub fn annotate_sent_back(ranked: &mut [RankedTask], sent_back: &BTreeMap<String, String>) {
+    for task in ranked {
+        if let Some(note) = sent_back.get(&task.task_id) {
+            task.reason = if note.is_empty() {
+                format!("{}; sent back", task.reason)
+            } else {
+                format!("{}; sent back: {note}", task.reason)
+            };
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +191,9 @@ pub fn rank_next(
             continue;
         }
         if foreign_blocked.get(id.as_str()).copied().unwrap_or(false) {
+            continue;
+        }
+        if !world.open_blockers_for(id).is_empty() {
             continue;
         }
         if let Some(claim) = world.live_claim(id, now) {
@@ -477,5 +564,177 @@ mod tests {
         assert!(claim_is(&claim("m1", ""), &me_with("id-1")));
         assert!(claim_is(&claim("m1", "id-1"), &me_with("")));
         assert!(!claim_is(&claim("m2", ""), &me_with("id-1")));
+    }
+
+    fn claim_by(task: &str, dev: &str, machine: &str, worktree: &str, at: &str) -> Claim {
+        Claim {
+            id: task.into(),
+            project_id: "p".into(),
+            task_id: task.into(),
+            dev: dev.into(),
+            machine: machine.into(),
+            machine_id: String::new(),
+            worktree: worktree.into(),
+            git_ref: "refs/heads/f".into(),
+            created: at.into(),
+            ttl_secs: 3600,
+        }
+    }
+
+    fn closed_by(w: &mut World, task: &str, dev: &str, machine: &str) {
+        w.status_changes.push(StatusChange {
+            id: format!("close-{task}").into(),
+            project_id: "p".into(),
+            task_id: task.into(),
+            to_status: StatusKind::Closed,
+            anchor_commit: Some("a".into()),
+            created: "2026-07-18T11:00:00Z".into(),
+            by_dev: dev.into(),
+            by_machine: machine.into(),
+        });
+    }
+
+    fn who(dev: &str, machine: &str, worktree: &str) -> Identity {
+        Identity {
+            dev: dev.into(),
+            machine: machine.into(),
+            machine_id: String::new(),
+            worktree: worktree.into(),
+        }
+    }
+
+    #[test]
+    fn self_review_latest_claimant_by_worktree() {
+        let (mut w, _) = world_with(&[("t1", Priority::P2, "2026-07-01T00:00:00Z")]);
+        // Same email and hostname, two worktrees on one machine.
+        w.claim_history.push(claim_by(
+            "t1",
+            "x@laptop",
+            "laptop",
+            "/old",
+            "2026-07-18T09:00:00Z",
+        ));
+        w.claim_history.push(claim_by(
+            "t1",
+            "x@laptop",
+            "laptop",
+            "/author",
+            "2026-07-18T10:00:00Z",
+        ));
+        assert_eq!(
+            is_self_review(&w, "t1", &who("x@laptop", "laptop", "/author")),
+            Some(SelfReview::Claimant)
+        );
+        // A different worktree on the same host is someone else, even one
+        // that claimed it earlier but not last.
+        assert_eq!(
+            is_self_review(&w, "t1", &who("x@laptop", "laptop", "/reviewer")),
+            None
+        );
+        assert_eq!(
+            is_self_review(&w, "t1", &who("x@laptop", "laptop", "/old")),
+            None
+        );
+    }
+
+    #[test]
+    fn self_review_closer_takes_worktree_from_their_claims() {
+        let (mut w, _) = world_with(&[("t1", Priority::P2, "2026-07-01T00:00:00Z")]);
+        w.claim_history.push(claim_by(
+            "t1",
+            "x@laptop",
+            "laptop",
+            "/author",
+            "2026-07-18T09:00:00Z",
+        ));
+        // Someone else claimed after the author, then the author closed.
+        w.claim_history
+            .push(claim_by("t1", "y@m", "m", "/other", "2026-07-18T10:00:00Z"));
+        closed_by(&mut w, "t1", "x@laptop", "laptop");
+        assert_eq!(
+            is_self_review(&w, "t1", &who("x@laptop", "laptop", "/author")),
+            Some(SelfReview::Closer)
+        );
+        assert_eq!(
+            is_self_review(&w, "t1", &who("x@laptop", "laptop", "/reviewer")),
+            None
+        );
+    }
+
+    #[test]
+    fn self_review_closer_who_never_claimed_only_warns() {
+        let (mut w, _) = world_with(&[("t1", Priority::P2, "2026-07-01T00:00:00Z")]);
+        closed_by(&mut w, "t1", "x@laptop", "laptop");
+        let got = is_self_review(&w, "t1", &who("x@laptop", "laptop", "/anywhere"));
+        assert_eq!(got, Some(SelfReview::CloserHostOnly));
+        assert!(!got.unwrap().refuses());
+        assert!(SelfReview::Claimant.refuses() && SelfReview::Closer.refuses());
+        assert_eq!(
+            is_self_review(&w, "t1", &who("y@laptop", "laptop", "/anywhere")),
+            None
+        );
+    }
+
+    #[test]
+    fn self_review_uses_machine_id_when_both_have_one() {
+        let (mut w, _) = world_with(&[("t1", Priority::P2, "2026-07-01T00:00:00Z")]);
+        let mut c = claim_by("t1", "x@h", "host", "/w", "2026-07-18T09:00:00Z");
+        c.machine_id = "id-1".into();
+        w.claim_history.push(c);
+        let mut twin = who("x@h", "host", "/w");
+        twin.machine_id = "id-2".into();
+        // Same hostname and path on a different machine is not the claimant.
+        assert_eq!(is_self_review(&w, "t1", &twin), None);
+        twin.machine_id = "id-1".into();
+        assert_eq!(is_self_review(&w, "t1", &twin), Some(SelfReview::Claimant));
+    }
+
+    #[test]
+    fn sent_back_note_joins_the_reason() {
+        let (w, statuses) = world_with(&[
+            ("t1", Priority::P1, "2026-07-01T00:00:00Z"),
+            ("t2", Priority::P2, "2026-07-01T00:00:00Z"),
+        ]);
+        let mut ranked = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me());
+        let notes = BTreeMap::from([("t2".to_string(), "no test for the empty case".to_string())]);
+        annotate_sent_back(&mut ranked, &notes);
+        assert_eq!(ranked[0].reason, "P1; ranked 1st of 2 eligible");
+        assert_eq!(
+            ranked[1].reason,
+            "P2; ranked 2nd of 2 eligible; sent back: no test for the empty case"
+        );
+    }
+
+    #[test]
+    fn an_open_blocker_makes_a_task_ineligible_until_closed() {
+        let (mut w, statuses) = world_with(&[
+            ("t1", Priority::P0, "2026-07-01T00:00:00Z"),
+            ("t2", Priority::P2, "2026-07-01T00:00:00Z"),
+        ]);
+        let mut b = Blocker {
+            id: "b1".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            reason: "waiting on the operator".into(),
+            by_dev: "d".into(),
+            by_machine: "m".into(),
+            created: "2026-07-18T00:00:00Z".into(),
+            closed_by: None,
+            closed_reason: None,
+            closed_at: None,
+        };
+        w.blockers.insert("b1".into(), b.clone());
+        let ids: Vec<_> = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me())
+            .into_iter()
+            .map(|r| r.task_id)
+            .collect();
+        assert_eq!(ids, ["t2"]);
+        b.closed_at = Some("2026-07-18T01:00:00Z".into());
+        w.blockers.insert("b1".into(), b);
+        let ids: Vec<_> = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me())
+            .into_iter()
+            .map(|r| r.task_id)
+            .collect();
+        assert_eq!(ids, ["t1", "t2"]);
     }
 }

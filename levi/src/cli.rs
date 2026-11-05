@@ -103,7 +103,8 @@ pub enum Cmd {
     Steal { id: String },
     /// Release your claim on a task.
     Drop { id: String },
-    /// Fail unless every task ever claimed by a branch is closed at HEAD.
+    /// Fail unless every task ever claimed by a branch is closed at HEAD
+    /// (and, with --require-review, verified there).
     /// Intended for CI; short branch names are normalized to refs/heads/<name>.
     CheckClaims {
         /// Branch whose historical claims to check. Defaults to the current branch.
@@ -112,6 +113,10 @@ pub enum Cmd {
         /// Git revision whose task status to test. Defaults to HEAD.
         #[arg(long)]
         at: Option<String>,
+        /// Also fail unless each task has a verified review that applies
+        /// at the tested commit.
+        #[arg(long)]
+        require_review: bool,
         #[arg(long)]
         json: bool,
     },
@@ -151,6 +156,57 @@ pub enum Cmd {
     },
     /// Comment on a task.
     Comment { id: String, text: String },
+    /// Verify a task: you read it at a commit (HEAD by default) and it does
+    /// what it should. Applies on checkouts whose ancestry has that commit.
+    /// Refused for the task's claimant or closer.
+    Verify {
+        id: String,
+        /// The commit you read. Defaults to HEAD.
+        #[arg(long)]
+        commit: Option<String>,
+        /// What you checked.
+        #[arg(short = 'm', long = "message", default_value = "")]
+        note: String,
+    },
+    /// Say what a task is waiting on when it isn't another task (for
+    /// that, use `dep add`). The task isn't eligible for `next` until the
+    /// blocker is closed. Prints the blocker's id.
+    Block {
+        id: String,
+        /// What it's waiting on.
+        #[arg(short = 'm', long = "message")]
+        reason: String,
+    },
+    /// Close a blocker (by its `bk-` id), saying why it no longer blocks.
+    Unblock {
+        blocker: String,
+        /// Why it no longer blocks.
+        #[arg(short = 'm', long = "message")]
+        why: String,
+    },
+    /// Ask for a read of a task at a commit (HEAD by default) before it's
+    /// merged. Open until someone verifies or sends it back at that commit or
+    /// a descendant, after the request; while it's open, `check-claims
+    /// --require-review` fails. Asking again replaces it.
+    RequestRead {
+        id: String,
+        /// The commit to read. Defaults to HEAD.
+        #[arg(long)]
+        commit: Option<String>,
+    },
+    /// Withdraw your read request on a task.
+    WithdrawRead { id: String },
+    /// Send a task back: you read it at a commit (HEAD by default) and
+    /// something's missing. Refused for the task's claimant or closer.
+    SendBack {
+        id: String,
+        /// The commit you read. Defaults to HEAD.
+        #[arg(long)]
+        commit: Option<String>,
+        /// What's missing.
+        #[arg(short = 'm', long = "message")]
+        note: String,
+    },
     /// Edit task metadata.
     Edit {
         id: String,

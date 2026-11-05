@@ -39,6 +39,81 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
         })
         .collect();
 
+    // Each review, and whether its commit is in this checkout's ancestry.
+    // Who reviewed is declared, like every levi identity.
+    let reviews: Vec<_> = ctx
+        .world
+        .reviews_for(&task_id)
+        .into_iter()
+        .map(|r| {
+            let applies = match anc.contains(&r.commit) {
+                Ancestry::Yes | Ancestry::Rewritten => "yes",
+                Ancestry::No => "no",
+                Ancestry::Unknown => "unknown",
+            };
+            json!({
+                "verdict": r.verdict.label(),
+                "commit": r.commit,
+                "note": r.note,
+                "by": r.by_dev,
+                "machine": r.by_machine,
+                "worktree": r.by_worktree,
+                "at": r.created,
+                "applies_here": applies,
+                "source": "declared",
+                "self_review_warning": r.self_review_warning,
+            })
+        })
+        .collect();
+    let review = crate::output::review_summary(&ctx.world, &task_id, &mut anc);
+    // Every non-task blocker on the task, open and closed, oldest first.
+    let mut task_blockers: Vec<&levi_core::Blocker> = ctx
+        .world
+        .blockers
+        .values()
+        .filter(|b| *b.task_id == task_id)
+        .collect();
+    task_blockers
+        .sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
+    let blockers: Vec<_> = task_blockers
+        .into_iter()
+        .map(crate::output::blocker_json)
+        .collect();
+    // Read requests that haven't been withdrawn, and whether each is answered.
+    let read_requests: Vec<_> = levi_core::reads::read_request_states(
+        &ctx.world,
+        &task_id,
+        &mut anc,
+        &mut crate::ancestors::GixOrder::new(ctx.store.repo(), ctx.config.patch_id_window),
+    )
+    .into_iter()
+    .map(|st| {
+        json!({
+            "commit": st.request.commit,
+            "by": st.request.by_dev,
+            "machine": st.request.by_machine,
+            "worktree": st.request.by_worktree,
+            "at": st.request.created,
+            "open": st.is_open(),
+            "answered_by": st.answered_by.map(|r| json!({
+                "verdict": r.verdict.label(),
+                "commit": r.commit,
+                "by": r.by_dev,
+                "at": r.created,
+            })),
+            "unplaced": st.unplaced,
+            "settled_by": st.settled_by.map(|r| json!({
+                "verdict": r.verdict.label(),
+                "commit": r.commit,
+                "by": r.by_dev,
+                "at": r.created,
+            })),
+            "closed_before_read": st.closed_before_read,
+            "source": "declared",
+        })
+    })
+    .collect();
+
     let comments: Vec<_> = ctx
         .world
         .comments
@@ -110,27 +185,29 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
 
     let claim = claim_json(&ctx.world, &task_id, now);
     if json {
-        println!(
-            "{}",
-            json!({
-                "schema": SCHEMA_SHOW,
-                "id": task_id,
-                "short": short_id(&ctx.world, &task_id),
-                "title": task.title,
-                "body": task.body,
-                "status": resolved.status.label(),
-                "resolution": resolved.resolution.label(),
-                "priority": task.priority.label(),
-                "labels": task.labels,
-                "created_at": task.created,
-                "created_by": task.created_by_dev,
-                "claim": claim,
-                "blocked_by": blocked_by,
-                "blocks": blocks,
-                "comments": comments,
-                "history": history,
-            })
-        );
+        let mut out = json!({
+            "schema": SCHEMA_SHOW,
+            "id": task_id,
+            "short": short_id(&ctx.world, &task_id),
+            "title": task.title,
+            "body": task.body,
+            "status": resolved.status.label(),
+            "resolution": resolved.resolution.label(),
+            "priority": task.priority.label(),
+            "labels": task.labels,
+            "created_at": task.created,
+            "created_by": task.created_by_dev,
+            "claim": claim,
+            "blocked_by": blocked_by,
+            "blocks": blocks,
+            "comments": comments,
+            "history": history,
+            "reviews": reviews,
+            "read_requests": read_requests,
+            "blockers": blockers,
+        });
+        crate::output::add_review_fields(&mut out, &review);
+        println!("{out}");
         return Ok(());
     }
 
@@ -193,6 +270,94 @@ pub fn run(ctx: &LeviCtx, id_input: &str, json: bool) -> Result<()> {
                 h["by"].as_str().unwrap_or_default(),
                 h["at"].as_str().unwrap_or_default(),
                 h["applies_here"].as_str().unwrap_or_default(),
+            );
+        }
+    }
+    if !reviews.is_empty() {
+        println!("reviews (declared):");
+        for r in &reviews {
+            let commit = r["commit"].as_str().unwrap_or_default();
+            let note = r["note"].as_str().unwrap_or_default();
+            println!(
+                "  {} by {} at {} @ {} (applies here: {}){}{}",
+                r["verdict"].as_str().unwrap_or_default(),
+                r["by"].as_str().unwrap_or_default(),
+                r["at"].as_str().unwrap_or_default(),
+                &commit[..commit.len().min(8)],
+                r["applies_here"].as_str().unwrap_or_default(),
+                if note.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {note}")
+                },
+                if r["self_review_warning"] == true {
+                    "  ⚠ same dev and machine as the closer"
+                } else {
+                    ""
+                },
+            );
+        }
+        if let Some(d) = &review.differs {
+            println!(
+                "  verified at {} but closed here at {} (observed)",
+                &d.verified[..d.verified.len().min(8)],
+                &d.closed[..d.closed.len().min(8)]
+            );
+        }
+    }
+    if !blockers.is_empty() {
+        println!("waiting on (declared):");
+        for b in &blockers {
+            let state = if b["open"] == true {
+                "open".to_string()
+            } else {
+                format!(
+                    "closed by {} at {}: {}",
+                    b["closed_by"].as_str().unwrap_or_default(),
+                    b["closed_at"].as_str().unwrap_or_default(),
+                    b["closed_reason"].as_str().unwrap_or_default()
+                )
+            };
+            println!(
+                "  {} {} (by {} at {}; {state})",
+                b["short"].as_str().unwrap_or_default(),
+                b["reason"].as_str().unwrap_or_default(),
+                b["by"].as_str().unwrap_or_default(),
+                b["at"].as_str().unwrap_or_default(),
+            );
+        }
+    }
+    if !read_requests.is_empty() {
+        println!("read requests (declared):");
+        for r in &read_requests {
+            let commit = r["commit"].as_str().unwrap_or_default();
+            let state = if r["open"] == true && r["unplaced"] == true {
+                "open; its commit isn't here".to_string()
+            } else if r["open"] == true {
+                "open".to_string()
+            } else if r["answered_by"].is_null() {
+                format!(
+                    "its commit isn't here; settled by a later read: {} by {}",
+                    r["settled_by"]["verdict"].as_str().unwrap_or_default(),
+                    r["settled_by"]["by"].as_str().unwrap_or_default()
+                )
+            } else {
+                format!(
+                    "answered: {} by {}",
+                    r["answered_by"]["verdict"].as_str().unwrap_or_default(),
+                    r["answered_by"]["by"].as_str().unwrap_or_default()
+                )
+            };
+            println!(
+                "  by {} at {} @ {} ({state}){}",
+                r["by"].as_str().unwrap_or_default(),
+                r["at"].as_str().unwrap_or_default(),
+                &commit[..commit.len().min(8)],
+                if r["closed_before_read"] == true {
+                    "  ⚠ closed here before it was read"
+                } else {
+                    ""
+                },
             );
         }
     }

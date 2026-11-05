@@ -104,3 +104,95 @@ pub fn task_line(
     }
     line
 }
+
+/// A task's review state on one checkout: the newest review whose commit is
+/// in this checkout's ancestry, and whether the verified commit differs from
+/// the commit the task closed at here.
+pub struct ReviewSummary {
+    pub state: levi_core::resolve::ReviewState,
+    pub resolution: levi_core::resolve::Resolution,
+    pub differs: Option<levi_core::resolve::ReviewDiffers>,
+    /// The newest applying review's note.
+    pub note: Option<String>,
+    /// Reviews whose commit can't be placed here.
+    pub unplaced: usize,
+}
+
+pub fn review_summary(
+    world: &World,
+    task_id: &str,
+    anc: &mut impl levi_core::resolve::AncestorSet,
+) -> ReviewSummary {
+    use levi_core::resolve::{
+        Resolution, closing_anchor, placed_reviews, review_differs, review_state,
+    };
+    let reviews = world.reviews_for(task_id);
+    let placed = placed_reviews(&reviews, anc, Resolution::Exact);
+    let (applying, resolution, unplaced) = (placed.applying, placed.resolution, placed.unplaced);
+    let closed = closing_anchor(&world.changes_for(task_id), anc);
+    ReviewSummary {
+        state: review_state(&applying),
+        resolution,
+        differs: review_differs(closed, &applying),
+        note: applying.last().map(|(r, _)| r.note.clone()),
+        unplaced,
+    }
+}
+
+/// Add the review fields to a task's JSON. The verdict is labelled
+/// `declared`: levi's identity is self-declared, so a review says who claims
+/// to have read what, not proof of it. `review_differs` is worked out from
+/// git alone, so it is labelled `observed`.
+pub fn add_review_fields(v: &mut Value, summary: &ReviewSummary) {
+    use levi_core::resolve::ReviewState;
+    v["review"] = json!(summary.state.label());
+    v["review_source"] = match summary.state {
+        ReviewState::None => Value::Null,
+        _ => json!("declared"),
+    };
+    v["review_resolution"] = json!(summary.resolution.label());
+    v["unplaced_reviews"] = json!(summary.unplaced);
+    v["review_differs"] = match &summary.differs {
+        Some(d) => json!({"verified": d.verified, "closed": d.closed, "source": "observed"}),
+        None => Value::Null,
+    };
+}
+
+/// A short human marker for `ls`.
+pub fn review_marker(summary: &ReviewSummary) -> &'static str {
+    use levi_core::resolve::ReviewState;
+    match (summary.state, summary.differs.is_some()) {
+        (ReviewState::Verified, false) => "  ✓ verified",
+        (ReviewState::Verified, true) => "  ✓ verified (at another commit)",
+        (ReviewState::SentBack, _) => "  ↩ sent back",
+        (ReviewState::None, _) => "",
+    }
+}
+
+/// A blocker as JSON. What it says is declared by whoever opened or closed it.
+pub fn blocker_json(b: &levi_core::Blocker) -> Value {
+    json!({
+        "id": b.id.0,
+        "short": crate::commands::blocker::blocker_short(&b.id.0),
+        "reason": b.reason,
+        "by": b.by_dev,
+        "machine": b.by_machine,
+        "at": b.created,
+        "open": b.is_open(),
+        "closed_by": b.closed_by,
+        "closed_reason": b.closed_reason,
+        "closed_at": b.closed_at,
+        "source": "declared",
+    })
+}
+
+/// A task's open blockers, oldest first, as JSON.
+pub fn open_blockers_json(world: &World, task_id: &str) -> Value {
+    Value::Array(
+        world
+            .open_blockers_for(task_id)
+            .into_iter()
+            .map(blocker_json)
+            .collect(),
+    )
+}

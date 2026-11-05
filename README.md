@@ -55,6 +55,68 @@ CI must fetch the custom event ref first, for example
 `git fetch origin +refs/levi/events:refs/levi/events` (or run `levi sync`).
 Ref identity is exact: renaming a branch does not transfer its old obligations.
 
+## Reviews
+
+```sh
+levi verify lv-3f2a [--commit SHA] [-m "what you checked"]
+levi send-back lv-3f2a [--commit SHA] -m "what's missing"
+levi check-claims --git-ref feature --require-review   # CI: closed *and* verified
+```
+
+A review records that someone read a task's work at a commit (HEAD by
+default) and either verified it or sent it back with a note. Like a close, it
+resolves by ancestry: it applies on checkouts whose history contains the commit
+read, so a verification on a feature branch shows on main once it's merged.
+`show`, `ls` and `next` report `review` (`verified`, `sent_back` or `none`)
+from the newest review that applies here. `review_source` is `declared`,
+because a review is only as good as the identity behind it. When the verified
+commit isn't the one the task closed at here, `review_differs` gives both,
+labelled `observed`, since that comes from git alone. A sent-back task that's
+still open stays eligible, and `next` says why; `send-back` doesn't reopen a
+closed task (use `levi reopen`).
+
+A task's claimant, or its closer, can't review it. Identity is matched on
+(dev, machine, worktree), as claims are, so a second session in another
+worktree on the same machine can. A closer who never claimed the task is
+matched on (dev, machine) only, so they get a warning instead of a refusal.
+levi's identity is self-declared, so this catches mistakes, not impostors.
+
+`levi request-read ID [--commit SHA]` asks for a read before a merge, and
+`levi withdraw-read ID` takes your ask back. The request stays open until
+someone reviews the task at that commit or a later one, after the request was
+made; a review of an older commit doesn't answer it. Asking again replaces your
+earlier request.
+`show` lists requests, and marks one with `closed_before_read` when a close
+that applies here was made while it was still open.
+
+`check-claims --require-review` also fails unless each task's newest review
+that applies at the tested commit is a verification: no review there, or a
+send-back, fails it. So does an open read request.
+
+That verification must have read the commit the task closed at, or a later
+one. A verification of an older commit fails the gate too, since the commits
+between were never read: `check-claims --json` reports it as `stale_review`.
+
+After a rebase, a review or read request can name a commit the tested clone
+doesn't have. Such a review only counts against the gate if it's newer than
+every review that applies; a fresh verification after it decides. Such a
+request stays open until a review made after it, at a commit that applies here
+and at or after the close, settles it. Both are counted, as `unplaced_reviews`
+and `unplaced_reads`, never silently dropped.
+
+## Blockers that aren't tasks
+
+```sh
+levi block lv-3f2a -m "waiting on the operator to open port 6300"   # → bk-1a2b3c4d
+levi unblock bk-1a2b3c4d -m "the operator opened it"
+```
+
+`dep add` covers a task waiting on another task. `block` covers anything
+else. A task with an open blocker isn't eligible for `next`. `ls --json` lists
+each task's open blockers, and `show` lists all of them, with who closed each
+one and why. Anyone can close a blocker, and the log keeps both events. What a
+blocker says is declared by whoever wrote it.
+
 ## GitHub Action
 
 Levi publishes a colocated composite action backed by checksum-verified native

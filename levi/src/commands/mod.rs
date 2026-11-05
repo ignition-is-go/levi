@@ -1,4 +1,5 @@
 pub mod add;
+pub mod blocker;
 pub mod check_claims;
 pub mod claim_ops;
 pub mod comment;
@@ -9,6 +10,8 @@ pub mod init;
 pub mod ls;
 pub mod next;
 pub mod project;
+pub mod reads;
+pub mod review;
 pub mod show;
 pub mod status;
 pub mod sync_cmd;

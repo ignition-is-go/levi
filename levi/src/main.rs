@@ -103,9 +103,12 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Start { id } => commands::claim_ops::start(&ctx, &id),
         Cmd::Steal { id } => commands::claim_ops::steal(&ctx, &id),
         Cmd::Drop { id } => commands::claim_ops::drop(&ctx, &id),
-        Cmd::CheckClaims { git_ref, at, json } => {
-            commands::check_claims::run(&ctx, git_ref, at, json)
-        }
+        Cmd::CheckClaims {
+            git_ref,
+            at,
+            require_review,
+            json,
+        } => commands::check_claims::run(&ctx, git_ref, at, require_review, json),
         Cmd::Dep { cmd } => match cmd {
             levi::cli::DepCmd::Add { blocked, on, via } => {
                 commands::dep::add(&ctx, &blocked, &on, via)
@@ -113,6 +116,24 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             levi::cli::DepCmd::Rm { blocked, on } => commands::dep::rm(&ctx, &blocked, &on),
         },
         Cmd::Comment { id, text } => commands::comment::run(&ctx, &id, &text),
+        Cmd::Verify { id, commit, note } => commands::review::run(
+            &ctx,
+            &id,
+            levi_core::ReviewVerdict::Verified,
+            commit.as_deref(),
+            &note,
+        ),
+        Cmd::Block { id, reason } => commands::blocker::block(&ctx, &id, &reason),
+        Cmd::Unblock { blocker, why } => commands::blocker::unblock(&ctx, &blocker, &why),
+        Cmd::RequestRead { id, commit } => commands::reads::request(&ctx, &id, commit.as_deref()),
+        Cmd::WithdrawRead { id } => commands::reads::withdraw(&ctx, &id),
+        Cmd::SendBack { id, commit, note } => commands::review::run(
+            &ctx,
+            &id,
+            levi_core::ReviewVerdict::SentBack,
+            commit.as_deref(),
+            &note,
+        ),
         Cmd::Edit {
             id,
             priority,
