@@ -257,12 +257,13 @@ fn Shell(manager: WorkspaceManager<PaneState>) -> impl IntoView {
     }
 }
 
-/// Connect to the hub: `?hub=host:port` overrides, otherwise the page's
-/// hostname on the default hub port (the dashboard is a standalone CSR app —
-/// `trunk serve` in dev — talking straight to levi-hub's /myko).
+/// Connect to the hub: `?hub=host:port` overrides. HTTPS deployments use the
+/// same-origin `/myko` WebSocket route; HTTP development keeps the direct hub
+/// port because `trunk serve` and levi-hub run on separate ports.
 fn connect() {
     let window = web_sys::window().expect("window");
     let location = window.location();
+    let secure_page = matches!(location.protocol().as_deref(), Ok("https:"));
     let hub = location
         .search()
         .ok()
@@ -274,17 +275,23 @@ fn connect() {
         })
         .filter(|h| !h.is_empty())
         .unwrap_or_else(|| {
-            let hostname = location.hostname().unwrap_or_else(|_| "localhost".into());
-            format!("{hostname}:7377")
+            if secure_page {
+                format!(
+                    "{}/myko",
+                    location.host().unwrap_or_else(|_| "localhost".into())
+                )
+            } else {
+                format!(
+                    "{}:7377/myko",
+                    location.hostname().unwrap_or_else(|_| "localhost".into())
+                )
+            }
         });
     // Secure pages must use wss:// — browsers block mixed-content ws://.
-    let hub = if hub.contains("://") {
+    let hub = if hub.starts_with("ws://") || hub.starts_with("wss://") {
         hub
     } else {
-        let scheme = match location.protocol().as_deref() {
-            Ok("https:") => "wss",
-            _ => "ws",
-        };
+        let scheme = if secure_page { "wss" } else { "ws" };
         format!("{scheme}://{hub}")
     };
     myko_leptos::provide_myko(&hub);

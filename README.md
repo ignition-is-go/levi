@@ -125,8 +125,10 @@ cd levi-dash && trunk serve       # dev, http://localhost:1420
 cd levi-dash && trunk build       # dist/ — host the static files anywhere
 ```
 
-It connects to `ws://<page-hostname>:7377/myko` by default; override with
-`?hub=host:port`. Built on [mullion] splittable panes (activity bar on each
+On HTTPS pages it connects to the same-origin `wss://<page-hostname>/myko`
+route. On HTTP development pages it connects directly to
+`ws://<page-hostname>:7377/myko`. Override either with `?hub=host:port`.
+Built on [mullion] splittable panes (activity bar on each
 pane; split/drag/close like an IDE) and the [pulse-leptos-ui] design system.
 Views: overview (open/closed counts, P0 alerts, live activity feed),
 in-flight claims by dev → machine → worktree, and a project browser with a
