@@ -4,12 +4,14 @@
 //! ref saved at one time stays in the ref's history from then on. `levi
 //! check-events` prints the ref's current head, to save somewhere the ref's
 //! writers can't reach; `levi check-events --expect SHA` later fails unless
-//! that commit is still the head or one of its ancestors. A ref that was reset
-//! or rewritten fails. It can't catch events added as someone else: anyone
-//! with push access to the ref can write any event.
+//! that commit is still the head or one of its ancestors, and every event it
+//! held is still in the head's tree. So a ref that was reset, rewritten, or
+//! had events removed fails. It can't catch events added as someone else:
+//! anyone with push access to the ref can write any event.
 //!
-//! It reads the local ref as it stands, never syncing first, so what it checks
-//! is what this checkout holds.
+//! It doesn't change the events ref, and reads it as it stands, never syncing
+//! first, so what it checks is what this checkout holds. Like every levi
+//! command it needs git `user.email` set.
 
 use anyhow::{Result, bail};
 use gix::ObjectId;
@@ -17,10 +19,12 @@ use serde_json::json;
 
 use crate::ctx::LeviCtx;
 use crate::output::SCHEMA_CHECK_EVENTS;
-use crate::store::EVENTS_REF;
+use crate::store::{EVENTS_REF, EventStore};
 
-/// Why an expected commit isn't in the events ref's history, or `None` if it is.
-fn fault(repo: &gix::Repository, head: Option<ObjectId>, expected: ObjectId) -> Option<String> {
+/// Why the events ref no longer holds an expected commit and all its events,
+/// or `None` if it does.
+fn fault(store: &EventStore, head: Option<ObjectId>, expected: ObjectId) -> Option<String> {
+    let repo = store.repo();
     let Some(head) = head else {
         return Some(format!("{EVENTS_REF} is absent here"));
     };
@@ -42,15 +46,25 @@ fn fault(repo: &gix::Repository, head: Option<ObjectId>, expected: ObjectId) -> 
         Some(_) => {}
     }
     match repo.merge_base(head, expected) {
-        Ok(base) if base.detach() == expected => None,
-        _ => Some(format!(
-            "{expected} is no longer in {EVENTS_REF}'s history: the ref was reset or rewritten"
+        Ok(base) if base.detach() == expected => {}
+        _ => {
+            return Some(format!(
+                "{expected} is no longer in {EVENTS_REF}'s history: the ref was reset or rewritten"
+            ));
+        }
+    }
+    // Ancestry alone isn't enough: a commit on top of the saved head can
+    // leave events out of its tree, and only the head's tree is read.
+    match store.missing_events(expected, head) {
+        Ok(0) => None,
+        Ok(n) => Some(format!(
+            "{n} event(s) in {expected} are missing from {head}: the ref was rewritten"
         )),
+        Err(e) => Some(format!("can't compare {expected} with {head}: {e:#}")),
     }
 }
 
 pub fn run(ctx: &LeviCtx, expect: Option<String>, json_output: bool) -> Result<()> {
-    let repo = ctx.store.repo();
     let head = ctx.store.head()?;
     let Some(expect) = expect else {
         // No expectation: say where the ref is, so it can be saved.
@@ -71,7 +85,7 @@ pub fn run(ctx: &LeviCtx, expect: Option<String>, json_output: bool) -> Result<(
         Ok(id) => id,
         Err(_) => bail!("--expect takes a full commit hash, not {expect:?}"),
     };
-    let fault = fault(repo, head, expected);
+    let fault = fault(&ctx.store, head, expected);
     if json_output {
         println!(
             "{}",

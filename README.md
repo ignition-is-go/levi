@@ -58,13 +58,15 @@ CI must fetch the custom event ref first, for example
 Ref identity is exact: renaming a branch does not transfer its old obligations.
 
 Events are only ever added and merged by union, so a head of `refs/levi/events`
-stays in the ref's history from then on. `levi check-events` prints the current
-head; save it somewhere the ref's writers can't reach. Later,
-`levi check-events --expect SHA` exits non-zero unless that commit is still the
-head or one of its ancestors, so a ref that was reset or rewritten shows. It
-reads the local ref without syncing, and `--json` gives `levi.check-events/1`.
-It can't catch events added as someone else: anyone who can push the ref can
-write any event.
+stays in the ref's history from then on, with all its events. `levi
+check-events` prints the current head; save it somewhere the ref's writers
+can't reach. Later, `levi check-events --expect SHA` exits non-zero unless that
+commit is still the head or one of its ancestors and every event it held is
+still in the head, so a ref that was reset, rewritten or had events removed
+shows. It doesn't change the events ref and reads the local ref without
+syncing; `--json` gives `levi.check-events/1`. Like every levi command it needs
+git `user.email` set, so set one in CI. It can't catch events added as someone
+else: anyone who can push the ref can write any event.
 
 ## GitHub Action
 

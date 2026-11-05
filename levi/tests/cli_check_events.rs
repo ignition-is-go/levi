@@ -65,6 +65,67 @@ fn a_reset_or_rewritten_events_ref_fails() {
         .stderr(predicate::str::contains("reset or rewritten"));
 }
 
+/// `git mktree`, fed the tree listing on stdin.
+fn mktree(repo: &TestRepo, listing: &str) -> String {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("git")
+        .arg("mktree")
+        .current_dir(repo.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(listing.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn a_descendant_that_drops_events_fails() {
+    let repo = TestRepo::new();
+    repo.init();
+    repo.add("first", &[]);
+    repo.add("second", &[]);
+    let saved = head(&repo);
+    let tasks = |repo: &TestRepo| {
+        repo.levi_json(&["ls", "--json", "--all"])["tasks"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    let before = tasks(&repo);
+
+    // A commit on top of the saved head whose tree leaves one shard out.
+    let shards = repo.git(&["ls-tree", &saved]);
+    let kept: String = shards.lines().skip(1).map(|l| format!("{l}\n")).collect();
+    let tree = mktree(&repo, &kept);
+    let forged = repo.git(&["commit-tree", tree.trim(), "-p", &saved, "-m", "drop"]);
+    repo.git(&["update-ref", "refs/levi/events", forged.trim()]);
+    assert!(tasks(&repo) < before, "the forged head should hide a task");
+
+    let out = repo
+        .levi(&["check-events", "--expect", &saved, "--json"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert!(
+        value["reason"]
+            .as_str()
+            .unwrap()
+            .contains("are missing from"),
+        "{value}"
+    );
+}
+
 #[test]
 fn an_unknown_commit_an_absent_ref_or_a_short_hash_fails() {
     let repo = TestRepo::new();
@@ -182,7 +243,16 @@ fn heads_saved_on_either_clone_survive_sync_and_divergent_appends() {
     sync(&b);
     sync(&a);
     // Union merges give the clones the same events, not always the same commit:
-    // what matters is that every saved head is still an ancestor on both.
+    // the same tasks on both, and every saved head still held on both.
+    let ls = |dir: &PathBuf| {
+        let out = base
+            .levi_in(dir.clone(), &["ls", "--all", "--json"])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    assert_eq!(ls(&a), ls(&b), "clones list the same tasks");
 
     for dir in [&a, &b] {
         for saved in [&saved_a, &saved_b] {

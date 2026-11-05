@@ -105,7 +105,8 @@ pub enum Cmd {
     Drop { id: String },
     /// Print the head of refs/levi/events, to save somewhere its writers can't
     /// reach; with --expect, fail unless that saved commit is still in the
-    /// ref's history, so a reset or rewritten ref shows. Read-only.
+    /// ref's history with all its events, so a reset, a rewrite or a removal
+    /// shows. Doesn't change the events ref.
     CheckEvents {
         /// A head printed earlier, as a full commit hash.
         #[arg(long)]
