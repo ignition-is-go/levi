@@ -1,7 +1,7 @@
 //! Ranking for `levi next` (spec §Ranking).
 //!
 //! Eligible = open on this checkout ∧ every blocker closed on this checkout ∧
-//! no live claim by someone else. Order: priority (P0 first) → transitive
+//! no open non-task Blocker ∧ no live claim by someone else. Order: priority (P0 first) → transitive
 //! unblock count (closing this frees the most open work) → age (oldest
 //! first) → task id. Deterministic and explainable.
 
@@ -191,6 +191,9 @@ pub fn rank_next(
             continue;
         }
         if foreign_blocked.get(id.as_str()).copied().unwrap_or(false) {
+            continue;
+        }
+        if !world.open_blockers_for(id).is_empty() {
             continue;
         }
         if let Some(claim) = world.live_claim(id, now) {
@@ -700,5 +703,38 @@ mod tests {
             ranked[1].reason,
             "P2; ranked 2nd of 2 eligible; sent back: no test for the empty case"
         );
+    }
+
+    #[test]
+    fn an_open_blocker_makes_a_task_ineligible_until_closed() {
+        let (mut w, statuses) = world_with(&[
+            ("t1", Priority::P0, "2026-07-01T00:00:00Z"),
+            ("t2", Priority::P2, "2026-07-01T00:00:00Z"),
+        ]);
+        let mut b = Blocker {
+            id: "b1".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            reason: "waiting on the operator".into(),
+            by_dev: "d".into(),
+            by_machine: "m".into(),
+            created: "2026-07-18T00:00:00Z".into(),
+            closed_by: None,
+            closed_reason: None,
+            closed_at: None,
+        };
+        w.blockers.insert("b1".into(), b.clone());
+        let ids: Vec<_> = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me())
+            .into_iter()
+            .map(|r| r.task_id)
+            .collect();
+        assert_eq!(ids, ["t2"]);
+        b.closed_at = Some("2026-07-18T01:00:00Z".into());
+        w.blockers.insert("b1".into(), b);
+        let ids: Vec<_> = rank_next(&w, &statuses, &BTreeMap::new(), now(), &me())
+            .into_iter()
+            .map(|r| r.task_id)
+            .collect();
+        assert_eq!(ids, ["t1", "t2"]);
     }
 }

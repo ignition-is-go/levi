@@ -42,6 +42,9 @@ pub struct World {
     pub reviews: Vec<Review>,
     /// Keyed by `read_request_id`; SET replaces, DEL withdraws.
     pub read_requests: BTreeMap<String, ReadRequest>,
+    /// Keyed by blocker id; the newest SET holds, so a closed blocker reads
+    /// as closed.
+    pub blockers: BTreeMap<String, Blocker>,
 }
 
 impl World {
@@ -59,6 +62,17 @@ impl World {
             .iter()
             .filter(|r| &*r.task_id == task_id)
             .collect()
+    }
+
+    /// This task's open blockers, oldest first.
+    pub fn open_blockers_for(&self, task_id: &str) -> Vec<&Blocker> {
+        let mut open: Vec<&Blocker> = self
+            .blockers
+            .values()
+            .filter(|b| &*b.task_id == task_id && b.is_open())
+            .collect();
+        open.sort_by(|a, b| (a.created.as_str(), &*a.id.0).cmp(&(b.created.as_str(), &*b.id.0)));
+        open
     }
 
     /// The claim on this task, if it exists and its ttl has not expired.
@@ -115,6 +129,8 @@ pub fn materialize(mut records: Vec<EventRecord>) -> World {
             apply(&mut reviews, ev);
         } else if t == ReadRequest::ENTITY_NAME_STATIC {
             apply(&mut w.read_requests, ev);
+        } else if t == Blocker::ENTITY_NAME_STATIC {
+            apply(&mut w.blockers, ev);
         }
         // Unknown item types are skipped: forward compatibility with newer levi.
     }
@@ -385,5 +401,37 @@ mod tests {
         }]);
         assert_eq!(w.reviews[0].note, "");
         assert_eq!(w.reviews[0].by_machine_id, "");
+    }
+
+    #[test]
+    fn unblock_is_a_later_set_and_closes_the_blocker() {
+        let open = Blocker {
+            id: "b1".into(),
+            project_id: "p".into(),
+            task_id: "t1".into(),
+            reason: "waiting on the operator to open port 6300".into(),
+            by_dev: "d".into(),
+            by_machine: "m".into(),
+            created: "2026-07-01T00:00:00Z".into(),
+            closed_by: None,
+            closed_reason: None,
+            closed_at: None,
+        };
+        let mut closed = open.clone();
+        closed.closed_by = Some("op".into());
+        closed.closed_reason = Some("port opened".into());
+        closed.closed_at = Some("2026-07-02T00:00:00Z".into());
+        let w = materialize(vec![rec("aa", &open, "2026-07-01T00:00:00Z")]);
+        assert_eq!(w.open_blockers_for("t1").len(), 1);
+        // Arrival order doesn't matter: the later SET wins.
+        let w = materialize(vec![
+            rec("bb", &closed, "2026-07-02T00:00:00Z"),
+            rec("aa", &open, "2026-07-01T00:00:00Z"),
+        ]);
+        assert!(w.open_blockers_for("t1").is_empty());
+        assert_eq!(
+            w.blockers["b1"].closed_reason.as_deref(),
+            Some("port opened")
+        );
     }
 }

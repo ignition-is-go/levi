@@ -302,3 +302,68 @@ async fn read_request_log_entry_unwraps_into_queryable_read_request() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn blocker_log_entries_unwrap_into_a_queryable_closed_blocker() {
+    let hub = start_hub();
+    let client = MykoClient::new();
+    assert!(connect(&client, format!("ws://127.0.0.1:{}/myko", hub.port)).await);
+
+    // A Blocker rides a LogEntry like any other event. Unblocking is a later
+    // SET of the same id with the close filled in, and the hub keeps that one.
+    let open = levi_core::Blocker {
+        id: "bead0000bead0000bead0000bead0000".into(),
+        project_id: "projB".into(),
+        task_id: "cafe2222cafe2222cafe2222cafe2222".into(),
+        reason: "waiting on the operator to open a port".into(),
+        by_dev: "b@e".into(),
+        by_machine: "m".into(),
+        created: "2026-07-18T00:00:00.000000Z".into(),
+        closed_by: None,
+        closed_reason: None,
+        closed_at: None,
+    };
+    let mut closed = open.clone();
+    closed.closed_by = Some("b@e".into());
+    closed.closed_reason = Some("the operator opened it".into());
+    closed.closed_at = Some("2026-07-18T01:00:00.000000Z".into());
+    for (item, at, entry_id) in [
+        (
+            &open,
+            &open.created,
+            "eeee000011112222eeee000011112222eeee0000",
+        ),
+        (
+            &closed,
+            closed.closed_at.as_ref().unwrap(),
+            "eeee000011112222eeee000011112222eeee0001",
+        ),
+    ] {
+        let mut inner = MEvent::from_item(item, MEventType::SET, "m");
+        inner.created_at = at.clone().into();
+        let mut cbor = Vec::new();
+        ciborium::into_writer(&inner, &mut cbor).unwrap();
+        let entry = LogEntry::wrap(entry_id, "projB", &cbor, at);
+        let _ = client.send_event(MEvent::from_item(&entry, MEventType::SET, "test"));
+    }
+
+    let blockers = client.watch_query(levi_core::GetAllBlockers {});
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let got = blockers.get();
+        if let Some(b) = got
+            .iter()
+            .find(|b| &*b.id.0 == "bead0000bead0000bead0000bead0000")
+            .filter(|b| !b.is_open())
+        {
+            assert_eq!(b.reason, "waiting on the operator to open a port");
+            assert_eq!(b.closed_reason.as_deref(), Some("the operator opened it"));
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "closed blocker never appeared via saga unwrap; got {got:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}

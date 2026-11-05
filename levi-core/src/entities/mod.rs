@@ -1,4 +1,5 @@
 mod applied;
+mod blocker;
 mod claim;
 mod comment;
 mod commit_fact;
@@ -12,6 +13,7 @@ mod status_change;
 mod task;
 
 pub use applied::*;
+pub use blocker::*;
 pub use claim::*;
 pub use comment::*;
 pub use commit_fact::*;
