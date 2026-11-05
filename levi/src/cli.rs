@@ -103,6 +103,18 @@ pub enum Cmd {
     Steal { id: String },
     /// Release your claim on a task.
     Drop { id: String },
+    /// What a coding agent should know when its session starts, for a
+    /// session-start hook: your claimed tasks here and the top of `next`.
+    /// Writes nothing and never syncs; prints nothing and exits 0 on any
+    /// failure. Skips the cross-project lookup, so it may list fewer tasks
+    /// than `levi next`.
+    SessionStart {
+        #[arg(long)]
+        json: bool,
+        /// Say on stderr why nothing was printed.
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Fail unless every task ever claimed by a branch is closed at HEAD.
     /// Intended for CI; short branch names are normalized to refs/heads/<name>.
     CheckClaims {

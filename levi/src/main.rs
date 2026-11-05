@@ -13,6 +13,12 @@ fn main() {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
+    // Before the usual load, which writes local state and fails loudly:
+    // session-start loads read-only and never fails a session's start.
+    if let Cmd::SessionStart { json, verbose } = cli.cmd {
+        commands::session_start::run(json, verbose);
+        return Ok(());
+    }
     let mut ctx = LeviCtx::load(cli.no_sync)?;
     match cli.cmd {
         Cmd::Init { name, hub, files } => commands::init::run(&mut ctx, name, hub, files),
@@ -103,6 +109,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Start { id } => commands::claim_ops::start(&ctx, &id),
         Cmd::Steal { id } => commands::claim_ops::steal(&ctx, &id),
         Cmd::Drop { id } => commands::claim_ops::drop(&ctx, &id),
+        // Handled above, before the load.
+        Cmd::SessionStart { .. } => Ok(()),
         Cmd::CheckClaims { git_ref, at, json } => {
             commands::check_claims::run(&ctx, git_ref, at, json)
         }

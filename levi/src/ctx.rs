@@ -46,6 +46,24 @@ impl LeviCtx {
         })
     }
 
+    /// Load for a read-only command: the same discovery, events and identity,
+    /// but nothing is written to disk. It doesn't register this checkout as a
+    /// sibling or mint a machine id, and it never syncs.
+    pub fn load_read_only() -> Result<Self> {
+        let cwd = std::env::current_dir()?;
+        let store = EventStore::discover(&cwd)?;
+        let identity = identity_with(store.repo(), crate::state::existing_machine_id)?;
+        let config = LeviConfig::load(store.repo());
+        let world = materialize(store.read()?);
+        Ok(Self {
+            store,
+            world,
+            identity,
+            config,
+            no_sync: true,
+        })
+    }
+
     /// Re-read and re-materialize (after an append, e.g. for `next --claim`).
     pub fn reload(&mut self) -> Result<()> {
         self.world = materialize(self.store.read()?);
@@ -160,6 +178,10 @@ impl LeviCtx {
 }
 
 fn detect_identity(repo: &gix::Repository) -> Result<Identity> {
+    identity_with(repo, crate::state::machine_id)
+}
+
+fn identity_with(repo: &gix::Repository, machine_id: fn() -> String) -> Result<Identity> {
     let snap = repo.config_snapshot();
     let dev = snap
         .string("user.email")
@@ -170,7 +192,6 @@ fn detect_identity(repo: &gix::Repository) -> Result<Identity> {
         .ok()
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "unknown-host".into());
-    let machine_id = crate::state::machine_id();
     let worktree = match repo.workdir() {
         Some(wd) => wd.canonicalize().unwrap_or_else(|_| wd.to_path_buf()),
         None => repo.git_dir().to_path_buf(),
@@ -178,7 +199,7 @@ fn detect_identity(repo: &gix::Repository) -> Result<Identity> {
     Ok(Identity {
         dev,
         machine,
-        machine_id,
+        machine_id: machine_id(),
         worktree: worktree.display().to_string(),
     })
 }
