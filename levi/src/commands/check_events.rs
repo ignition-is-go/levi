@@ -27,10 +27,19 @@ fn fault(repo: &gix::Repository, head: Option<ObjectId>, expected: ObjectId) -> 
     if head == expected {
         return None;
     }
-    if repo.try_find_object(expected).ok().flatten().is_none() {
-        return Some(format!(
-            "{expected} isn't in this repository: fetch {EVENTS_REF} first, or it was lost"
-        ));
+    match repo.try_find_header(expected).ok().flatten() {
+        None => {
+            return Some(format!(
+                "{expected} isn't in this repository: fetch {EVENTS_REF} first, or it was lost"
+            ));
+        }
+        Some(header) if header.kind() != gix::object::Kind::Commit => {
+            return Some(format!(
+                "{expected} is a {}, not a commit: pass a head printed by levi check-events",
+                header.kind()
+            ));
+        }
+        Some(_) => {}
     }
     match repo.merge_base(head, expected) {
         Ok(base) if base.detach() == expected => None,
