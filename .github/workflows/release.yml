@@ -93,7 +93,7 @@ jobs:
           - os: ["self-hosted", "macOS", "ARM64", "site-lucid-lab", "ram-ge-24g", "disk-ge-100g"]
             target: aarch64-apple-darwin
             binary_ext: ''
-          - os: windows-2025
+          - os: [self-hosted, Windows, X64, ram-ge-8g, disk-ge-100g]
             target: x86_64-pc-windows-msvc
             binary_ext: .exe
     runs-on: ${{ matrix.os }}
@@ -176,7 +176,7 @@ jobs:
           - os: macos-arm
             runner: ["self-hosted", "macOS", "ARM64", "site-lucid-lab", "ram-ge-24g", "disk-ge-100g"]
           - os: windows
-            runner: windows-2025
+            runner: [self-hosted, Windows, X64, ram-ge-8g, disk-ge-100g]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
