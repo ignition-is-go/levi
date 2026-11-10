@@ -90,7 +90,7 @@ jobs:
           - os: ["self-hosted", "Linux", "X64", "ram-ge-16g", "disk-ge-100g"]
             target: x86_64-unknown-linux-gnu
             binary_ext: ''
-          - os: ["self-hosted", "macOS", "ARM64", "site-lucid-lab", "ram-ge-24g", "disk-ge-100g"]
+          - os: ["self-hosted", "macOS", "ARM64", "site-lucid-lab", "ram-ge-24g"]
             target: aarch64-apple-darwin
             binary_ext: ''
           - os: [self-hosted, Windows, X64, ram-ge-8g, disk-ge-100g]
@@ -174,7 +174,7 @@ jobs:
           - os: linux
             runner: ["self-hosted", "Linux", "X64", "ram-ge-16g", "disk-ge-100g"]
           - os: macos-arm
-            runner: ["self-hosted", "macOS", "ARM64", "site-lucid-lab", "ram-ge-24g", "disk-ge-100g"]
+            runner: ["self-hosted", "macOS", "ARM64", "site-lucid-lab", "ram-ge-24g"]
           - os: windows
             runner: [self-hosted, Windows, X64, ram-ge-8g, disk-ge-100g]
     runs-on: ${{ matrix.runner }}
