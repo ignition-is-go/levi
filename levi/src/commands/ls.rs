@@ -56,6 +56,17 @@ pub fn run(ctx: &mut LeviCtx, opts: LsOpts) -> Result<()> {
     let now = Utc::now();
     let mut anc = ctx.ancestors_for(opts.branch.as_deref())?;
     let statuses = ctx.statuses(&mut anc, Resolution::Exact);
+    let reviews: std::collections::BTreeMap<&str, crate::output::ReviewSummary> = ctx
+        .world
+        .tasks
+        .keys()
+        .map(|id| {
+            (
+                id.as_str(),
+                crate::output::review_summary(&ctx.world, id, &mut anc),
+            )
+        })
+        .collect();
 
     let mut rows: Vec<_> = ctx
         .world
@@ -109,7 +120,10 @@ pub fn run(ctx: &mut LeviCtx, opts: LsOpts) -> Result<()> {
             .iter()
             .map(|t| {
                 let elsewhere = elsewhere_of(&t.id.0);
-                task_json(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere)
+                let mut v = task_json(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere);
+                crate::output::add_review_fields(&mut v, &reviews[&*t.id.0]);
+                v["blockers"] = crate::output::open_blockers_json(&ctx.world, &t.id.0);
+                v
             })
             .collect();
         println!(
@@ -126,9 +140,14 @@ pub fn run(ctx: &mut LeviCtx, opts: LsOpts) -> Result<()> {
         }
         for t in rows {
             let elsewhere = elsewhere_of(&t.id.0);
+            let blocked = match ctx.world.open_blockers_for(&t.id.0).first() {
+                Some(b) => format!("  ⛔ waiting on: {}", b.reason),
+                None => String::new(),
+            };
             println!(
-                "{}",
-                task_line(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere)
+                "{}{}{blocked}",
+                task_line(&ctx.world, t, &statuses[&*t.id.0], now, &elsewhere),
+                crate::output::review_marker(&reviews[&*t.id.0])
             );
         }
     }

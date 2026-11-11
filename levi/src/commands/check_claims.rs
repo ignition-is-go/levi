@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result, bail};
+use levi_core::gate::review_gate;
 use levi_core::ids::short_id;
 use levi_core::resolve::{Resolution, Status};
 use serde_json::json;
@@ -19,6 +20,7 @@ pub fn run(
     ctx: &LeviCtx,
     git_ref: Option<String>,
     at: Option<String>,
+    require_review: bool,
     json_output: bool,
 ) -> Result<()> {
     ctx.project_id()?;
@@ -38,6 +40,7 @@ pub fn run(
     let tested_commit = ctx.rev(at.as_deref().unwrap_or("HEAD"))?.to_string();
     let mut anc = ctx.ancestors_for(Some(&tested_commit))?;
     let statuses = ctx.statuses(&mut anc, Resolution::Exact);
+    let mut order = crate::ancestors::GixOrder::new(ctx.store.repo(), ctx.config.patch_id_window);
     let mut tasks = Vec::with_capacity(task_ids.len());
     let mut open = Vec::new();
     for task_id in task_ids {
@@ -56,18 +59,47 @@ pub fn run(
             continue;
         };
         let status = &statuses[task_id];
-        if status.status != Status::Closed || status.resolution == Resolution::Partial {
+        let gate = review_gate(&ctx.world, task_id, &mut anc, &mut order, Resolution::Exact);
+        let closed = status.status == Status::Closed && status.resolution != Resolution::Partial;
+        if !closed || (require_review && !gate.passes()) {
             open.push(task_id.to_string());
         }
-        tasks.push(json!({
+        let mut entry = json!({
             "id": task_id,
             "short": short_id(&ctx.world, task_id),
             "title": task.title,
             "status": status.status.label(),
             "resolution": status.resolution.label(),
-        }));
+            "open_reads": gate.open_reads,
+            // Read requests whose commit can't be placed here, say after a
+            // rebase: counted, never silently dropped. `unplaced_reviews`
+            // comes with the review fields below.
+            "unplaced_reads": gate.unplaced_reads,
+            // The verification read a commit older than the close: the
+            // commits between were never reviewed. Fails the gate.
+            "stale_review": gate.stale_review,
+            // The counting verification matched the closer on dev and
+            // machine only; reported so CI can see it.
+            "self_review_warning": gate.self_review_warning,
+        });
+        crate::output::add_review_fields(
+            &mut entry,
+            &crate::output::ReviewSummary {
+                state: gate.review,
+                resolution: gate.resolution,
+                differs: gate.differs,
+                note: None,
+                unplaced: gate.unplaced_reviews,
+            },
+        );
+        tasks.push(entry);
     }
 
+    let what = if require_review {
+        "closed and verified"
+    } else {
+        "closed"
+    };
     if json_output {
         println!(
             "{}",
@@ -81,23 +113,24 @@ pub fn run(
         );
     } else if open.is_empty() {
         println!(
-            "all {} task(s) claimed by {git_ref} are closed at {}",
+            "all {} task(s) claimed by {git_ref} are {what} at {}",
             tasks.len(),
             &tested_commit[..8]
         );
     } else {
         eprintln!(
-            "tasks claimed by {git_ref} that are not closed at {}:",
+            "tasks claimed by {git_ref} that are not {what} at {}:",
             &tested_commit[..8]
         );
         for task in tasks
             .iter()
-            .filter(|task| task["status"] != "closed" || task["resolution"] == "partial")
+            .filter(|task| open.iter().any(|id| task["id"] == id.as_str()))
         {
             eprintln!(
-                "  {} {:<7} {}",
+                "  {} {:<7} {:<9} {}",
                 task["short"].as_str().unwrap_or("lv-????"),
                 task["status"].as_str().unwrap_or("unknown"),
+                task["review"].as_str().unwrap_or("none"),
                 task["title"].as_str().unwrap_or("<unknown task>")
             );
         }
@@ -105,7 +138,7 @@ pub fn run(
 
     if !open.is_empty() {
         bail!(
-            "{} task(s) claimed by {git_ref} are not closed at {}",
+            "{} task(s) claimed by {git_ref} are not {what} at {}",
             open.len(),
             &tested_commit[..8]
         );

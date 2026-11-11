@@ -7,8 +7,8 @@ use anyhow::Result;
 use chrono::Utc;
 use levi_core::ids::short_id;
 use levi_core::materialize::materialize;
-use levi_core::rank::{RankedTask, rank_next};
-use levi_core::resolve::{Resolution, Status, effective_status};
+use levi_core::rank::{RankedTask, annotate_sent_back, rank_next};
+use levi_core::resolve::{Resolution, ReviewState, Status, effective_status};
 use serde_json::json;
 
 use crate::ctx::LeviCtx;
@@ -70,6 +70,9 @@ pub fn run(ctx: &mut LeviCtx, claim: bool, count: usize, json: bool) -> Result<(
             if blocked_by_open_blocker {
                 return false;
             }
+            if !world.open_blockers_for(&task_id).is_empty() {
+                return false;
+            }
             match world.live_claim(&task_id, now) {
                 None => true,
                 Some(c) => levi_core::rank::claim_is(c, &me),
@@ -93,13 +96,18 @@ fn rank(ctx: &LeviCtx) -> Result<Vec<RankedTask>> {
     let statuses = ctx.statuses(&mut anc, Resolution::Exact);
     let ladder = crate::foreign::resolve_ladder(ctx);
     let foreign = crate::foreign::status_map(&ladder);
-    Ok(rank_next(
-        &ctx.world,
-        &statuses,
-        &foreign,
-        Utc::now(),
-        &ctx.identity,
-    ))
+    let mut ranked = rank_next(&ctx.world, &statuses, &foreign, Utc::now(), &ctx.identity);
+    // A task sent back here is open and eligible again; say why.
+    let sent_back: std::collections::BTreeMap<String, String> = ranked
+        .iter()
+        .filter_map(|r| {
+            let review = crate::output::review_summary(&ctx.world, &r.task_id, &mut anc);
+            (review.state == ReviewState::SentBack)
+                .then(|| (r.task_id.clone(), review.note.unwrap_or_default()))
+        })
+        .collect();
+    annotate_sent_back(&mut ranked, &sent_back);
+    Ok(ranked)
 }
 
 fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
@@ -164,6 +172,8 @@ fn print(ctx: &LeviCtx, ranked: &[RankedTask], json: bool) -> Result<()> {
                 let task = &ctx.world.tasks[&r.task_id];
                 let elsewhere = elsewhere_of(&mut anc, &r.task_id);
                 let mut v = task_json(&ctx.world, task, &statuses[&r.task_id], now, &elsewhere);
+                let review = crate::output::review_summary(&ctx.world, &r.task_id, &mut anc);
+                crate::output::add_review_fields(&mut v, &review);
                 v["reason"] = json!(full_reason(r, &elsewhere));
                 v["unblocks"] = json!(r.unblocks);
                 v
