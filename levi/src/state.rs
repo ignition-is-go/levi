@@ -40,6 +40,16 @@ pub fn machine_id() -> String {
     }
 }
 
+/// The machine id if one was minted earlier, else empty. Never writes, for
+/// read-only commands; an empty id makes claim matching fall back to the
+/// hostname, as for legacy events.
+pub fn existing_machine_id() -> String {
+    state_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join("machine-id")).ok())
+        .map(|id| id.trim().to_string())
+        .unwrap_or_default()
+}
+
 /// Opportunistically record "this project has a checkout at this path" —
 /// every invocation upserts, so any repo levi has ever run in is findable
 /// as a sibling from every other repo on the machine.

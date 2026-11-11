@@ -33,6 +33,7 @@ levi close lv-3f2a                   # anchored at HEAD: closed only where
 levi ls --json                       # stable schemas on every read command
 levi show lv-3f2a                    # detail: deps, claim, comments, history
 levi check-claims --git-ref feature  # CI: fail if its claimed tasks are open at HEAD
+levi session-start                   # for a session-start hook: your claims, and next
 ```
 
 Anchoring: `levi close ID` anchors at HEAD; `--anchor SHA` overrides;
@@ -54,6 +55,35 @@ ever claimed by that branch is closed in the tested HEAD ancestry. Use
 CI must fetch the custom event ref first, for example
 `git fetch origin +refs/levi/events:refs/levi/events` (or run `levi sync`).
 Ref identity is exact: renaming a branch does not transfer its old obligations.
+
+## At the start of an agent's session
+
+`levi session-start` prints one block, between `<levi_state project="…">` and
+`</levi_state>`, for a coding agent's session-start hook to put in its context:
+the open tasks this dev/machine/worktree has claimed, with when each claim
+expires, and the top three of `levi next`, without claiming them. levi never
+installs a hook: whoever runs the machine points their agent's session-start
+hook at `levi session-start`.
+
+It's built to run on every session start:
+
+- It writes nothing: it doesn't sync, contact a hub, claim, register the
+  checkout or mint a machine id.
+- It gives up after one second, and on that or any failure (not a repository,
+  no events, no git `user.email`) prints nothing and exits 0. `--verbose` says
+  why on stderr.
+- The text block is at most 40 lines and 4 KB, and no line is over 512 bytes.
+  Claims that don't fit are counted; the next tasks always keep their room.
+- Task text is untrusted. Control and invisible characters become spaces,
+  `&`, `<`, `>` and `"` are escaped, and each piece is cut to 120 characters,
+  so a title can't break a line, close the block or pose as a tag. The block
+  ends by saying so.
+- It skips `levi next`'s cross-project lookup to stay quick. A blocker in
+  another project then counts as unresolved, so still blocking, and it may list
+  fewer tasks than `levi next`. Never more.
+
+`--json` gives `levi.session-start/1`, with `claims` and `next`, for programs:
+its text isn't escaped or cut, and it lists every claim.
 
 ## GitHub Action
 
