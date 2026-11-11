@@ -15,6 +15,7 @@ pub const SCHEMA_NEXT: &str = "levi.next/1";
 pub const SCHEMA_ADD: &str = "levi.add/1";
 pub const SCHEMA_WATCH: &str = "levi.watch/1";
 pub const SCHEMA_CHECK_CLAIMS: &str = "levi.check-claims/1";
+pub const SCHEMA_CHECK_EVENTS: &str = "levi.check-events/1";
 
 pub fn claim_json(world: &World, task_id: &str, now: DateTime<Utc>) -> Value {
     match world.live_claim(task_id, now) {

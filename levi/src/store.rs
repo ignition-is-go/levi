@@ -263,6 +263,25 @@ impl EventStore {
         Ok(shards)
     }
 
+    /// How many events stored at `expected` are missing from `head`. Events
+    /// are blobs named by their own hash, so this compares blob ids.
+    pub(crate) fn missing_events(
+        &self,
+        expected: ObjectId,
+        head: ObjectId,
+    ) -> anyhow::Result<usize> {
+        let present: std::collections::HashSet<ObjectId> = self
+            .blob_entries(head)?
+            .into_iter()
+            .map(|(_, oid)| oid)
+            .collect();
+        Ok(self
+            .blob_entries(expected)?
+            .into_iter()
+            .filter(|(_, oid)| !present.contains(oid))
+            .count())
+    }
+
     fn blob_entries(&self, head: ObjectId) -> anyhow::Result<Vec<((String, String), ObjectId)>> {
         let commit = self.repo.find_object(head)?.try_into_commit()?;
         let tree = commit.tree()?;

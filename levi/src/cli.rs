@@ -103,6 +103,17 @@ pub enum Cmd {
     Steal { id: String },
     /// Release your claim on a task.
     Drop { id: String },
+    /// Print the head of refs/levi/events, to save somewhere its writers can't
+    /// reach; with --expect, fail unless that saved commit is still in the
+    /// ref's history with all its events, so a reset, a rewrite or a removal
+    /// shows. Doesn't change the events ref.
+    CheckEvents {
+        /// A head printed earlier, as a full commit hash.
+        #[arg(long)]
+        expect: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Fail unless every task ever claimed by a branch is closed at HEAD.
     /// Intended for CI; short branch names are normalized to refs/heads/<name>.
     CheckClaims {

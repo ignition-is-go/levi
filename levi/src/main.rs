@@ -103,6 +103,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Start { id } => commands::claim_ops::start(&ctx, &id),
         Cmd::Steal { id } => commands::claim_ops::steal(&ctx, &id),
         Cmd::Drop { id } => commands::claim_ops::drop(&ctx, &id),
+        Cmd::CheckEvents { expect, json } => commands::check_events::run(&ctx, expect, json),
         Cmd::CheckClaims { git_ref, at, json } => {
             commands::check_claims::run(&ctx, git_ref, at, json)
         }
