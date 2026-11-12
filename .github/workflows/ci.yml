@@ -23,7 +23,7 @@ jobs:
       CI_CACHE_ACCESS_KEY: ${{ secrets.CI_CACHE_S3_ACCESS_KEY_ID }}
       CI_CACHE_SECRET_KEY: ${{ secrets.CI_CACHE_S3_SECRET_ACCESS_KEY }}
     with:
-      cargo-flux-version: "0.11.7"
+      cargo-flux-version: "0.11.8"
       cache-target-backend: flux-s3
       compiler-cache-endpoint: ${{ vars.CI_CACHE_S3_ENDPOINT }}
       compiler-cache-bucket: ${{ vars.CI_CACHE_S3_BUCKET }}
