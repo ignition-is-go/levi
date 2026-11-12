@@ -1,0 +1,42 @@
+name: Cache path probe
+'on':
+  push:
+    branches:
+    - ci-native-flux-rollout
+    paths:
+    - .github/workflows/cache-path-probe.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - ram-ge-16g
+    - disk-ge-100g
+    timeout-minutes: 4
+    steps:
+    - name: Probe existing ROSE snapshot ranges
+      env:
+        PROBE_SECRET: ${{ secrets.CI_CACHE_S3_SECRET_ACCESS_KEY }}
+      shell: bash
+      run: "python3 - <<'PY'\nimport os,json,sys,hashlib,hmac,datetime,urllib.request,time,concurrent.futures\n\
+        secret=os.environ['PROBE_SECRET']\nkey='cargo/292ea58cf96880680df801eb7406d2c838101df851ceaa610555ec42bef0b18e'\n\
+        path='/ci-cache/rust/v1/flux/objects/v2/'+hashlib.sha256(key.encode()).hexdigest()+'.tar'\n\
+        def request(method,byte_range=None):\n now=datetime.datetime.now(datetime.timezone.utc);day=now.strftime('%Y%m%d');stamp=now.strftime('%Y%m%dT%H%M%SZ')\n\
+        \ host='10.0.2.10:9000';payload=hashlib.sha256(b'').hexdigest();headers={'Host':host,'x-amz-content-sha256':payload,'x-amz-date':stamp}\n\
+        \ signed='host;x-amz-content-sha256;x-amz-date';canon='\\n'.join([method,path,'','host:'+host+'\\\
+        nx-amz-content-sha256:'+payload+'\\nx-amz-date:'+stamp+'\\n',signed,payload])\n\
+        \ scope=day+'/us-east-1/s3/aws4_request';message='AWS4-HMAC-SHA256\\n'+stamp+'\\\
+        n'+scope+'\\n'+hashlib.sha256(canon.encode()).hexdigest()\n sign=lambda k,v:hmac.new(k,v.encode(),hashlib.sha256).digest()\n\
+        \ signing=sign(sign(sign(sign(('AWS4'+secret).encode(),day),'us-east-1'),'s3'),'aws4_request')\n\
+        \ signature=hmac.new(signing,message.encode(),hashlib.sha256).hexdigest()\n\
+        \ headers['Authorization']='AWS4-HMAC-SHA256 Credential=pulse-ci-cache/'+scope+',\
+        \ SignedHeaders='+signed+', Signature='+signature\n if byte_range:headers['Range']=byte_range\n\
+        \ start=time.monotonic()\n with urllib.request.urlopen(urllib.request.Request('http://'+host+path,method=method,headers=headers),timeout=30)\
+        \ as response:\n  data=response.read();return {'method':method,'range':byte_range,'status':response.status,'bytes':len(data),'length':response.headers.get('Content-Length'),'content_range':response.headers.get('Content-Range'),'seconds':round(time.monotonic()-start,3)}\n\
+        print(json.dumps(request('HEAD')),flush=True)\nprint(json.dumps(request('GET','bytes=0-8388607')),flush=True)\n\
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:\n for result\
+        \ in pool.map(lambda i:request('GET',f'bytes={i*8388608}-{(i+1)*8388608-1}'),range(4)):\n\
+        \  print(json.dumps(result),flush=True)\n\nPY\n"
