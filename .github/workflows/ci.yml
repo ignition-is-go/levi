@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   check:
-    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-quality.yml@edd09f863bdbf40f187a894338dd91319e6f3e13 # v2.0.0 acceptance
+    uses: ignition-is-go/pulse-actions/.github/workflows/cargo-flux-quality.yml@3dbe244f9191e21ae8985511c0b0306edbc59845 # v2.0.0 acceptance
     secrets:
       CI_CACHE_ENDPOINT: ${{ secrets.CI_CACHE_ENDPOINT }}
       CI_CACHE_BUCKET: ${{ secrets.CI_CACHE_BUCKET }}
