@@ -4,7 +4,7 @@
 //! deduped against `.git/levi/facts-published` (commits, immutable) and
 //! `.git/levi/refs-published` (branch heads, which move).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
@@ -42,6 +42,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
 
     // Roots: every anchor sha + every local branch head.
     let mut roots: Vec<ObjectId> = Vec::new();
+    let mut heads = HashSet::new();
     let mut ref_facts: Vec<MEvent> = Vec::new();
     for change in &world.status_changes {
         if let Some(sha) = &change.anchor_commit
@@ -69,6 +70,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
             if let Ok(id) = reference.peel_to_id() {
                 let head = id.detach();
                 roots.push(head);
+                heads.insert(head.to_string());
                 let head_hex = head.to_string();
                 let confirmed = ref_state.get(&branch).is_some_and(|(cached, observed)| {
                     *cached == head_hex && is_recent(observed, now)
@@ -91,44 +93,8 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         }
     }
 
-    // Patch-ids for squash/rebase matching (spec 2026-07-22): every anchor
-    // commit + the most-recent `patch_id_window` commits per branch head.
-    // Bounded so we never compute a patch-id per commit over full history.
-    let repo_dir = repo
-        .workdir()
-        .unwrap_or_else(|| repo.git_dir())
-        .to_path_buf();
-    let window = ctx.config.patch_id_window;
-    let mut patch_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    // Windowed commits per head.
-    if let Ok(refs) = repo.references()
-        && let Ok(iter) = refs.prefixed("refs/heads/")
-    {
-        for reference in iter.flatten() {
-            let mut reference = reference;
-            if let Ok(id) = reference.peel_to_id() {
-                for (patch, sha) in crate::ancestors::recent_patch_ids_of(
-                    &repo_dir,
-                    &id.detach().to_string(),
-                    window,
-                ) {
-                    patch_of.entry(sha).or_insert(patch);
-                }
-            }
-        }
-    }
-    // Every status-change anchor commit (may live off the published heads).
-    for change in &world.status_changes {
-        if let Some(sha) = &change.anchor_commit
-            && !patch_of.contains_key(sha)
-            && let Some(patch) = crate::ancestors::patch_id_pub(&repo_dir, sha)
-        {
-            patch_of.insert(sha.clone(), patch);
-        }
-    }
-
     // Walk ancestors, depth-capped, skipping already-published shas.
-    let mut commit_facts: Vec<(MEvent, String)> = Vec::new();
+    let mut pending = Vec::new();
     let mut seen: HashSet<ObjectId> = HashSet::new();
     let mut frontier = roots;
     let mut depth = 0usize;
@@ -147,13 +113,7 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
             };
             let parents: Vec<ObjectId> = commit.parent_ids().map(|p| p.detach()).collect();
             if !published.contains(&sha) {
-                let fact = CommitFact {
-                    id: sha.clone().into(),
-                    project_id: project_id.clone(),
-                    parents: parents.iter().map(|p| p.to_string()).collect(),
-                    patch_id: patch_of.get(&sha).cloned(),
-                };
-                commit_facts.push((ctx.set_event(&fact), sha));
+                pending.push((sha, parents.iter().map(|p| p.to_string()).collect()));
             }
             // Even for already-published commits keep walking: their parents
             // may be unpublished (e.g. cache from a shallow earlier run).
@@ -162,6 +122,32 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         frontier = next;
         depth += 1;
     }
+
+    let repo_dir = repo.workdir().unwrap_or_else(|| repo.git_dir());
+    let unpublished = pending.iter().map(|(sha, _)| sha.clone()).collect();
+    let anchors = world
+        .status_changes
+        .iter()
+        .filter_map(|change| change.anchor_commit.as_deref());
+    let patch_of = patch_ids_for_facts(
+        repo_dir,
+        &heads,
+        anchors,
+        &unpublished,
+        ctx.config.patch_id_window,
+    );
+    let mut commit_facts: Vec<(MEvent, String)> = pending
+        .into_iter()
+        .map(|(sha, parents)| {
+            let fact = CommitFact {
+                id: sha.clone().into(),
+                project_id: project_id.clone(),
+                parents,
+                patch_id: patch_of.get(&sha).cloned(),
+            };
+            (ctx.set_event(&fact), sha)
+        })
+        .collect();
 
     let fact_count = ref_facts.len() + commit_facts.len();
     session.send_events(ref_facts)?;
@@ -203,6 +189,85 @@ pub fn publish(ctx: &LeviCtx, world: &World, session: &HubSession) -> Result<usi
         append_cache(&cache_path, &shas);
     }
     Ok(fact_count)
+}
+
+fn patch_ids_for_facts<'a>(
+    repo_dir: &Path,
+    heads: &HashSet<String>,
+    anchors: impl Iterator<Item = &'a str>,
+    unpublished: &HashSet<String>,
+    window: usize,
+) -> HashMap<String, String> {
+    use std::process::{Command, Stdio};
+
+    if unpublished.is_empty() {
+        return HashMap::new();
+    }
+    let anchor_candidates: HashSet<String> = anchors
+        .filter(|sha| unpublished.contains(*sha))
+        .map(str::to_string)
+        .collect();
+    let mut candidates = anchor_candidates.clone();
+    for head in heads {
+        let Ok(out) = Command::new("git")
+            .args(["rev-list", "-n", &window.to_string(), head])
+            .current_dir(repo_dir)
+            .output()
+        else {
+            continue;
+        };
+        if out.status.success() {
+            candidates.extend(
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .filter(|sha| unpublished.contains(*sha))
+                    .map(str::to_string),
+            );
+        }
+    }
+    let mut candidates: Vec<_> = candidates.into_iter().collect();
+    candidates.sort_unstable();
+    let mut patches = HashMap::new();
+    // SHA arguments are chunked to stay below Windows command-line limits.
+    for chunk in candidates.chunks(128) {
+        let Ok(mut log) = Command::new("git")
+            .args(["log", "--no-walk", "-p", "--format=%H"])
+            .args(chunk)
+            .current_dir(repo_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            continue;
+        };
+        let result = Command::new("git")
+            .args(["patch-id", "--stable"])
+            .current_dir(repo_dir)
+            .stdin(log.stdout.take().expect("piped git stdout"))
+            .output();
+        let Ok(out) = result else {
+            let _ = log.kill();
+            let _ = log.wait();
+            continue;
+        };
+        if !log.wait().is_ok_and(|status| status.success()) || !out.status.success() {
+            continue;
+        }
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let mut parts = line.split_whitespace();
+            if let (Some(patch), Some(sha)) = (parts.next(), parts.next()) {
+                patches.insert(sha.to_string(), patch.to_string());
+            }
+        }
+    }
+    for sha in anchor_candidates {
+        if !patches.contains_key(&sha)
+            && let Some(patch) = crate::ancestors::patch_id_pub(repo_dir, &sha)
+        {
+            patches.insert(sha, patch);
+        }
+    }
+    patches
 }
 
 /// Was this confirmation made recently enough to skip republishing?
@@ -267,4 +332,99 @@ fn append_cache(cache_path: &std::path::Path, shas: &[String]) {
 /// Small helper for `watch`/tests: a default per-leg timeout.
 pub fn leg_timeout() -> Duration {
     Duration::from_secs(10)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    fn commit(repo: &Path, name: &str) -> String {
+        std::fs::write(repo.join(name), name).unwrap();
+        git(repo, &["add", name]);
+        git(repo, &["commit", "-qm", name]);
+        git(repo, &["rev-parse", "HEAD"])
+    }
+
+    #[test]
+    fn fact_patches_preserve_each_head_window_and_explicit_anchors() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        git(repo, &["init", "-q", "-b", "main"]);
+        git(repo, &["config", "user.name", "Test"]);
+        git(repo, &["config", "user.email", "test@example.com"]);
+        let base = commit(repo, "base");
+        let middle = commit(repo, "middle");
+        let main = commit(repo, "main");
+        git(repo, &["checkout", "-qb", "side", &middle]);
+        let side = commit(repo, "side");
+        let heads = HashSet::from([main.clone(), side.clone()]);
+        let unpublished = HashSet::from([base.clone(), middle.clone(), main.clone(), side.clone()]);
+
+        let patches =
+            patch_ids_for_facts(repo, &heads, [base.as_str()].into_iter(), &unpublished, 1);
+        assert_eq!(
+            patches.keys().cloned().collect::<HashSet<_>>(),
+            HashSet::from([base, main, side]),
+            "each branch contributes its own window, while older anchors remain included"
+        );
+        let patches = patch_ids_for_facts(repo, &heads, std::iter::empty(), &unpublished, 0);
+        assert!(
+            patches.is_empty(),
+            "a zero window excludes unanchored patch IDs"
+        );
+    }
+
+    #[test]
+    fn explicit_merge_anchor_retains_its_combined_diff_patch() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        git(repo, &["init", "-q", "-b", "main"]);
+        git(repo, &["config", "user.name", "Test"]);
+        git(repo, &["config", "user.email", "test@example.com"]);
+        commit(repo, "base");
+        git(repo, &["branch", "side"]);
+        std::fs::write(repo.join("base"), "main\n").unwrap();
+        git(repo, &["commit", "-qam", "main"]);
+        git(repo, &["checkout", "-q", "side"]);
+        std::fs::write(repo.join("base"), "side\n").unwrap();
+        git(repo, &["commit", "-qam", "side"]);
+        git(repo, &["checkout", "-q", "main"]);
+        let merge = std::process::Command::new("git")
+            .args(["merge", "--no-commit", "side"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        assert!(
+            !merge.status.success(),
+            "fixture must produce a merge conflict"
+        );
+        std::fs::write(repo.join("base"), "resolved\n").unwrap();
+        git(repo, &["add", "base"]);
+        git(repo, &["commit", "-qm", "resolve conflict"]);
+        let anchor = git(repo, &["rev-parse", "HEAD"]);
+        let expected = crate::ancestors::patch_id_pub(repo, &anchor)
+            .expect("resolved merge has a combined diff");
+        let patches = patch_ids_for_facts(
+            repo,
+            &HashSet::from([anchor.clone()]),
+            [anchor.as_str()].into_iter(),
+            &HashSet::from([anchor.clone()]),
+            1,
+        );
+        assert_eq!(patches.get(&anchor), Some(&expected));
+    }
 }

@@ -16,6 +16,53 @@ fn status_of(ls: &Value, id: &str) -> Option<String> {
 }
 
 #[test]
+fn shallow_boundary_excludes_retained_older_commits() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("fix outside shallow history", &[]);
+    repo.commit("fix");
+    repo.levi_ok(&["close", &id]);
+    let head = repo.commit("shallow tip");
+    std::fs::write(repo.path().join(".git/shallow"), format!("{head}\n")).unwrap();
+
+    let ls = repo.levi_json(&["ls", "--json", "--all"]);
+    assert_eq!(status_of(&ls, &id).unwrap(), "open");
+    assert_eq!(
+        ls["tasks"][0]["closed_elsewhere"][0]["branches"],
+        serde_json::json!([])
+    );
+}
+
+#[test]
+fn branch_containment_preserves_shared_and_divergent_history() {
+    let repo = TestRepo::new();
+    repo.init();
+    let id = repo.add("shared fix", &[]);
+    let base = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+    repo.commit("fix");
+    repo.levi_ok(&["close", &id]);
+    repo.branch("shared-a");
+    repo.commit("later commit");
+    repo.branch("shared-b");
+    repo.git(&["branch", "before-fix", &base]);
+    repo.checkout("before-fix");
+
+    let ls = repo.levi_json(&["ls", "--json"]);
+    assert_eq!(status_of(&ls, &id).unwrap(), "open");
+    let branches = ls["tasks"][0]["closed_elsewhere"][0]["branches"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        branches,
+        &vec![
+            serde_json::json!("main"),
+            serde_json::json!("shared-a"),
+            serde_json::json!("shared-b")
+        ]
+    );
+}
+
+#[test]
 fn close_on_feature_branch_stays_open_on_main_until_merge() {
     let repo = TestRepo::new();
     repo.init();

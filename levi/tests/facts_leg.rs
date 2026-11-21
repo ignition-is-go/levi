@@ -115,3 +115,55 @@ fn facts_publish_chunks_large_history() {
     let cache = std::fs::read_to_string(&cache_path).unwrap();
     assert_eq!(cache.lines().count(), 601);
 }
+
+#[test]
+fn overlapping_branch_histories_do_not_repeat_patch_work() {
+    let __hub = start_hub_exclusive();
+    let repo = TestRepo::new();
+    repo.set_hub(&format!("127.0.0.1:{}", __hub.port));
+    repo.init();
+    repo.commit_file("shared.txt", "shared", "shared change");
+    for branch in ["feature-a", "feature-b", "feature-c"] {
+        repo.branch(branch);
+    }
+    repo.commit_file("main.txt", "main", "advance main");
+    repo.checkout("feature-a");
+    repo.commit_file("feature.txt", "feature", "advance feature");
+
+    let first_trace = repo.path().join("first-sync-trace.json");
+    repo.levi(&["sync", "--no-git"])
+        .env("GIT_TRACE2_EVENT", &first_trace)
+        .assert()
+        .success();
+    assert_eq!(
+        patch_processes(&first_trace),
+        1,
+        "shared history is hashed once"
+    );
+
+    let idle_trace = repo.path().join("idle-sync-trace.json");
+    repo.levi(&["sync", "--no-git"])
+        .env("GIT_TRACE2_EVENT", &idle_trace)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("published 0 fact(s)"));
+    assert_eq!(
+        patch_processes(&idle_trace),
+        0,
+        "idle sync must not hash patches"
+    );
+}
+
+fn patch_processes(trace: &std::path::Path) -> usize {
+    std::fs::read_to_string(trace)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|event| {
+            event["event"] == "start"
+                && event["argv"]
+                    .as_array()
+                    .is_some_and(|args| args.iter().any(|arg| arg.as_str() == Some("patch-id")))
+        })
+        .count()
+}
