@@ -1,8 +1,7 @@
-//! Exact ancestry answers from the real repository via gix merge-base
-//! (spec §Status resolution: "Locally: ancestry via gix merge-base against
-//! the real repo (exact)").
+//! Exact ancestry answers from batched Git history, with gix as a fallback.
 
-use std::collections::HashMap;
+use std::cell::OnceCell;
+use std::collections::{HashMap, HashSet};
 
 use gix::ObjectId;
 use levi_core::resolve::{AncestorSet, Ancestry};
@@ -15,6 +14,7 @@ pub struct GixAncestors<'r> {
     repo: &'r gix::Repository,
     head: Option<ObjectId>,
     cache: HashMap<String, Ancestry>,
+    reachable: OnceCell<Option<CommitGraph>>,
     /// Lazily-built patch-id set of head's recent history (spec 2026-07-22).
     head_patches: Option<std::collections::HashSet<String>>,
     /// Commits per head to consider for patch-id matching; defaults to
@@ -37,6 +37,7 @@ impl<'r> GixAncestors<'r> {
             repo,
             head,
             cache: HashMap::new(),
+            reachable: OnceCell::new(),
             head_patches: None,
             window: PATCH_ID_WINDOW,
         }
@@ -62,10 +63,17 @@ impl<'r> GixAncestors<'r> {
         if anchor == head {
             return Ancestry::Yes;
         }
-        let exact = match self.repo.merge_base(head, anchor) {
-            Ok(base) => base.detach() == anchor,
-            Err(_) => false,
-        };
+        let graph = self
+            .reachable
+            .get_or_init(|| CommitGraph::load(self.repo, &[head]));
+        let exact = graph.as_ref().map_or_else(
+            || {
+                self.repo
+                    .merge_base(head, anchor)
+                    .is_ok_and(|base| base.detach() == anchor)
+            },
+            |graph| graph.commits.contains(&anchor),
+        );
         if exact {
             return Ancestry::Yes;
         }
@@ -148,6 +156,7 @@ pub fn orphaned_anchors(
             }
         }
     }
+    let graph = CommitGraph::load(repo, &tips);
     let mut orphaned = Vec::new();
     let mut seen = HashMap::new();
     for sha in anchors {
@@ -162,13 +171,18 @@ pub fn orphaned_anchors(
             seen.insert(sha, false);
             continue;
         }
-        let reachable = tips.iter().any(|tip| {
-            *tip == anchor
-                || repo
-                    .merge_base(*tip, anchor)
-                    .map(|b| b.detach() == anchor)
-                    .unwrap_or(false)
-        });
+        let reachable = graph.as_ref().map_or_else(
+            || {
+                tips.iter().any(|tip| {
+                    *tip == anchor
+                        || repo
+                            .merge_base(*tip, anchor)
+                            .map(|b| b.detach() == anchor)
+                            .unwrap_or(false)
+                })
+            },
+            |graph| graph.commits.contains(&anchor),
+        );
         seen.insert(sha.clone(), !reachable);
         if !reachable {
             orphaned.push(sha);
@@ -234,9 +248,6 @@ pub fn recent_patch_ids_of(
     patch_ids_of(repo_dir, &["-n", &limit.to_string(), head])
 }
 
-/// Thin `pub` wrapper around the private `patch_id` helper, for callers
-/// outside this module (the facts publisher). Keeps `patch_id` itself
-/// private so its contract isn't widened beyond what's needed.
 pub fn patch_id_pub(repo_dir: &std::path::Path, sha: &str) -> Option<String> {
     patch_id(repo_dir, sha)
 }
@@ -292,6 +303,7 @@ pub struct ElsewhereClose {
 /// Local branch tips, collected once per invocation for containment checks.
 pub struct BranchTips {
     tips: Vec<(String, ObjectId)>,
+    graph: OnceCell<Option<CommitGraph>>,
 }
 
 impl BranchTips {
@@ -313,24 +325,100 @@ impl BranchTips {
                 }
             }
         }
-        Self { tips }
+        Self {
+            tips,
+            graph: OnceCell::new(),
+        }
     }
 
     fn containing(&self, repo: &gix::Repository, sha: &str) -> Vec<String> {
         let Ok(anchor) = ObjectId::from_hex(sha.as_bytes()) else {
             return Vec::new();
         };
+        let graph = self.graph.get_or_init(|| {
+            let heads: Vec<_> = self.tips.iter().map(|(_, id)| *id).collect();
+            CommitGraph::load(repo, &heads)
+        });
+        let descendants = graph.as_ref().map(|graph| graph.descendants(anchor));
         self.tips
             .iter()
             .filter(|(_, tip)| {
-                *tip == anchor
-                    || repo
-                        .merge_base(*tip, anchor)
-                        .map(|b| b.detach() == anchor)
-                        .unwrap_or(false)
+                descendants.as_ref().map_or_else(
+                    || {
+                        *tip == anchor
+                            || repo
+                                .merge_base(*tip, anchor)
+                                .map(|b| b.detach() == anchor)
+                                .unwrap_or(false)
+                    },
+                    |descendants| descendants.contains(tip),
+                )
             })
             .map(|(name, _)| name.clone())
             .collect()
+    }
+}
+
+struct CommitGraph {
+    commits: HashSet<ObjectId>,
+    children: HashMap<ObjectId, Vec<ObjectId>>,
+}
+
+impl CommitGraph {
+    fn load(repo: &gix::Repository, tips: &[ObjectId]) -> Option<Self> {
+        if tips.is_empty() {
+            return Some(Self {
+                commits: HashSet::new(),
+                children: HashMap::new(),
+            });
+        }
+        // Native Git applies shallow boundaries even when older objects remain locally available.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let mut git = Command::new("git")
+            .args(["rev-list", "--parents", "--stdin"])
+            .current_dir(repo.workdir().unwrap_or_else(|| repo.git_dir()))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let mut input = git.stdin.take()?;
+        let written = tips.iter().try_for_each(|tip| writeln!(input, "{tip}"));
+        drop(input);
+        let out = git.wait_with_output().ok()?;
+        if written.is_err() || !out.status.success() {
+            return None;
+        }
+        let mut commits = HashSet::new();
+        let mut children: HashMap<ObjectId, Vec<ObjectId>> = HashMap::new();
+        for line in out
+            .stdout
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+        {
+            let mut ids = line
+                .split(|b| b.is_ascii_whitespace())
+                .filter(|id| !id.is_empty());
+            let id = ObjectId::from_hex(ids.next()?).ok()?;
+            let parent_ids: Vec<_> = ids.map(ObjectId::from_hex).collect::<Result<_, _>>().ok()?;
+            for parent in &parent_ids {
+                children.entry(*parent).or_default().push(id);
+            }
+            commits.insert(id);
+        }
+        Some(Self { commits, children })
+    }
+
+    fn descendants(&self, anchor: ObjectId) -> HashSet<ObjectId> {
+        let mut seen = HashSet::new();
+        let mut pending = vec![anchor];
+        while let Some(id) = pending.pop() {
+            if seen.insert(id) {
+                pending.extend(self.children.get(&id).into_iter().flatten().copied());
+            }
+        }
+        seen
     }
 }
 
